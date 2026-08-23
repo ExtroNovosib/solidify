@@ -1,0 +1,12 @@
+version: "2"
+linters:
+  default: none
+  enable: [solidlint]
+  settings:
+    custom:
+      solidlint:
+        type: goplugin
+        path: ./bin/solidlint.so
+        description: host-built solidlint compatibility plugin
+        settings:
+          profile: stable

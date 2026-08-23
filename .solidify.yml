@@ -1,0 +1,2 @@
+# Analyzer runtime context: these go/* types are not invertible behind app-level interfaces.
+allow_dependencies: [FileSet, Info, Package]

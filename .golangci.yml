@@ -1,0 +1,46 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: none
+  enable: [bodyclose, copyloopvar, depguard, dogsled, dupl, errcheck, errname, errorlint, exhaustive, funlen, gochecknoinits, gocritic, goprintffuncname, govet, ineffassign, nakedret, noctx, nolintlint, staticcheck, unconvert, unparam, unused, whitespace]
+  settings:
+    depguard:
+      rules:
+        main:
+          files: ["$all"]
+          allow: [$gostd, github.com/ExtroNovosib/solidify, github.com/golangci/plugin-module-register, github.com/santhosh-tekuri/jsonschema/v5, golang.org/x/tools, golang.org/x/sync, gopkg.in/yaml.v3]
+    dupl:
+      threshold: 100
+    funlen:
+      lines: -1
+      statements: 120
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    govet:
+      enable: [nilness, shadow]
+    nakedret:
+      max-func-lines: 0
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    paths: [testdata, internal/analysisapi/testdata]
+    rules:
+      - path: (.+)_test\.go
+        linters: [dupl, funlen]
+formatters:
+  enable: [gci, gofmt, goimports]
+  settings:
+    gci:
+      sections: [standard, default, prefix(github.com/ExtroNovosib/solidify)]
+    gofmt:
+      rewrite-rules:
+        - pattern: interface{}
+          replacement: any
+    goimports:
+      local-prefixes: [github.com/ExtroNovosib/solidify]
+  exclusions:
+    paths: [testdata, internal/analysisapi/testdata]

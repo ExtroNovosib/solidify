@@ -1,0 +1,5 @@
+# Used only by the project regression gate on ./internal/analyzer/... .
+# Fixture corpora under testdata/ are verified separately by `make precision`
+# and `make smoke`.
+exclude: [testdata/**]
+allow_dependencies: [FileSet, Info, Package, packageFiles]

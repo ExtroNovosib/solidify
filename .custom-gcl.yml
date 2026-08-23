@@ -1,0 +1,7 @@
+version: v2.12.2
+name: solidlint-golangci
+destination: ./bin
+plugins:
+  - module: github.com/ExtroNovosib/solidify
+    import: github.com/ExtroNovosib/solidify/plugin/solidlint
+    path: .

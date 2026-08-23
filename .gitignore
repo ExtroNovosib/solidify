@@ -1,0 +1,30 @@
+# Build output
+/bin/
+/dist/
+/solidlint
+
+# Local tool caches
+.cache/
+
+# Generated analysis artifacts
+/graphify-out/
+*.sarif
+
+# Go test/coverage
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace (if used locally)
+go.work
+go.work.sum
+
+# OS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~

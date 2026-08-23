@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ExtroNovosib/solidify/schemas/solidlint-result-v3.schema.json",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schemaVersion", "fingerprintVersion", "id", "fingerprint", "rule", "severity", "maturity", "subject", "identity", "file", "line", "column", "message", "evidence"],
+    "properties": {
+      "schemaVersion": {"const": 3},
+      "fingerprintVersion": {"const": 4},
+      "id": {"type": "string", "pattern": "^SOLID-[SOLID]/[a-z][a-z0-9-]*$"},
+      "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+      "rule": {"enum": ["SOLID-S", "SOLID-O", "SOLID-L", "SOLID-I", "SOLID-D"]},
+      "severity": {"enum": ["note", "warning", "error"]},
+      "maturity": {"enum": ["stable", "experimental"]},
+      "subject": {"type": "string", "minLength": 1},
+      "identity": {"type": "string", "minLength": 1},
+      "file": {"type": "string", "minLength": 1},
+      "line": {"type": "integer", "minimum": 1},
+      "column": {"type": "integer", "minimum": 1},
+      "endLine": {"type": "integer", "minimum": 1},
+      "endColumn": {"type": "integer", "minimum": 1},
+      "helpUri": {"type": "string", "format": "uri"},
+      "message": {"type": "string", "minLength": 1},
+      "evidence": {"type": "string", "minLength": 1},
+      "metrics": {"type": "array", "items": {"$ref": "#/$defs/metric"}},
+      "groups": {"type": "array", "items": {"$ref": "#/$defs/group"}},
+      "relatedLocations": {"type": "array", "items": {"$ref": "#/$defs/related"}}
+    }
+  },
+  "$defs": {
+    "metric": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "value"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "value": {"type": "number"},
+        "threshold": {"type": "number"},
+        "comparator": {"enum": [">", ">=", "<", "<=", "=", "=="]}
+      }
+    },
+    "group": {
+      "type": "object", "additionalProperties": false,
+      "required": ["label", "symbols"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "symbols": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "related": {
+      "type": "object", "additionalProperties": false,
+      "required": ["file", "line", "column"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1},
+        "message": {"type": "string"}
+      }
+    }
+  }
+}

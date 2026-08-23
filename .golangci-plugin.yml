@@ -1,0 +1,11 @@
+version: "2"
+linters:
+  default: none
+  enable: [solidlint]
+  settings:
+    custom:
+      solidlint:
+        type: module
+        description: explainable package-scoped SOLID checks
+        settings:
+          profile: stable

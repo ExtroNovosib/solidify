@@ -1,0 +1,29 @@
+version: 2
+project_name: solidlint
+builds:
+  - id: solidlint
+    main: .
+    binary: solidlint
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - "-s -w"
+      - "-X main.version={{.Version}}"
+      - "-X main.commit={{.Commit}}"
+      - "-X main.buildDate={{.Date}}"
+archives:
+  - id: archives
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+sboms:
+  - artifacts: archive
+changelog:
+  use: git
+release:
+  prerelease: auto
