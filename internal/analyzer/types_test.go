@@ -65,11 +65,25 @@ func TestRuleIDsAndFingerprintsAreStable(t *testing.T) {
 }
 
 func TestIssueFingerprintUsesPortableAnalysisPath(t *testing.T) {
-	left := Issue{Rule: RuleISP, Check: CheckISPFatInterface, Evidence: "methods=9", Pos: token.Position{Filename: "/tmp/checkout-a/pkg/port.go"}, analysisRoot: "/tmp/checkout-a"}
-	right := left
-	right.Pos.Filename = "/tmp/checkout-b/pkg/port.go"
-	right.analysisRoot = "/tmp/checkout-b"
-	if left.Fingerprint() != right.Fingerprint() {
-		t.Fatalf("portable fingerprints differ: %s != %s", left.Fingerprint(), right.Fingerprint())
+	tests := []struct {
+		name      string
+		leftRoot  string
+		leftFile  string
+		rightRoot string
+		rightFile string
+	}{
+		{name: "slash paths", leftRoot: "/tmp/checkout-a", leftFile: "/tmp/checkout-a/pkg/port.go", rightRoot: "/tmp/checkout-b", rightFile: "/tmp/checkout-b/pkg/port.go"},
+		{name: "windows paths", leftRoot: `C:\work\checkout-a`, leftFile: `C:\work\checkout-a\pkg\port.go`, rightRoot: `D:\src\checkout-b`, rightFile: `D:\src\checkout-b\pkg\port.go`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			left := Issue{Rule: RuleISP, Check: CheckISPFatInterface, Evidence: "methods=9", Pos: token.Position{Filename: tt.leftFile}, analysisRoot: tt.leftRoot}
+			right := left
+			right.Pos.Filename = tt.rightFile
+			right.analysisRoot = tt.rightRoot
+			if left.Fingerprint() != right.Fingerprint() {
+				t.Fatalf("portable fingerprints differ: %s != %s", left.Fingerprint(), right.Fingerprint())
+			}
+		})
 	}
 }

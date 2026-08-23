@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/url"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +18,9 @@ import (
 func normalizedPath(root, filename string) (string, bool) {
 	if windowsStylePath(root) || windowsStylePath(filename) {
 		return normalizedWindowsPath(root, filename)
+	}
+	if strings.HasPrefix(root, "/") || strings.HasPrefix(filename, "/") {
+		return normalizedSlashPath(root, filename)
 	}
 	filename = filepath.Clean(filename)
 	if filename == "." || filename == "" {
@@ -41,6 +45,28 @@ func normalizedPath(root, filename string) (string, bool) {
 		return filepath.ToSlash(absoluteFile), false
 	}
 	return filepath.ToSlash(rel), true
+}
+
+func normalizedSlashPath(root, filename string) (string, bool) {
+	root = pathpkg.Clean(root)
+	filename = pathpkg.Clean(filename)
+	if filename == "." || filename == "" {
+		return "", false
+	}
+	if root == "." || root == "" {
+		return filename, !strings.HasPrefix(filename, "/")
+	}
+	if !strings.HasPrefix(filename, "/") {
+		return filename, true
+	}
+	if filename == root {
+		return ".", true
+	}
+	prefix := strings.TrimSuffix(root, "/") + "/"
+	if strings.HasPrefix(filename, prefix) {
+		return strings.TrimPrefix(filename, prefix), true
+	}
+	return filename, false
 }
 
 // FileURI returns a file:// URI for an absolute filesystem path.
