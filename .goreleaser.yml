@@ -2,7 +2,7 @@ version: 2
 project_name: solidlint
 builds:
   - id: solidlint
-    main: .
+    main: ./cmd/solidlint
     binary: solidlint
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]

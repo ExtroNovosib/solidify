@@ -1,5 +1,6 @@
 BINARY := solidlint
 MODULE := solidlint
+COMMAND := ./cmd/solidlint
 GO := go
 GOFLAGS ?=
 LDFLAGS ?=
@@ -24,7 +25,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 build: $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD) .
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BUILD) $(COMMAND)
 
 plugin: $(BUILD_DIR)
 	$(GO) build $(GOFLAGS) -tags plugin -buildmode=plugin -o $(BUILD_DIR)/solidlint.so ./cmd/solidlint-golangci
@@ -42,7 +43,7 @@ enforce: build
 	$(BUILD) -config .solidlint-enforce.yml -baseline $(BASELINE) $(LINT_PKG)
 
 install:
-	$(GO) install $(GOFLAGS) -ldflags "$(LDFLAGS)" .
+	$(GO) install $(GOFLAGS) -ldflags "$(LDFLAGS)" $(COMMAND)
 
 test:
 	$(GO) test $(GOFLAGS) ./...
@@ -122,7 +123,7 @@ release-snapshot:
 	@if command -v $(GORELEASER) >/dev/null 2>&1; then $(GORELEASER) release --snapshot --clean; else echo "goreleaser is required for release-snapshot" >&2; exit 1; fi
 
 version-check: $(BUILD_DIR)
-	$(GO) build $(GOFLAGS) -ldflags "-X main.version=$(TEST_VERSION)" -o $(VERSION_BUILD) .
+	$(GO) build $(GOFLAGS) -ldflags "-X main.version=$(TEST_VERSION)" -o $(VERSION_BUILD) $(COMMAND)
 	@test "$$($(VERSION_BUILD) -version)" = "$(TEST_VERSION)"
 	@$(VERSION_BUILD) -format=sarif -fail=false ./testdata/clean > $(BUILD_DIR)/version-check.sarif
 	@grep -q '"version":"$(TEST_VERSION)"' $(BUILD_DIR)/version-check.sarif

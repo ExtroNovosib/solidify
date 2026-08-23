@@ -28,7 +28,7 @@ module-wide OCP correlation; all checks remain explicitly heuristic.
 and CI automation so upgrades remain deliberate:
 
 ```sh
-go install github.com/ExtroNovosib/solidify@v0.1.0
+go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.1.0
 solidlint -version
 solidlint -fail=false ./...
 ```
@@ -44,7 +44,7 @@ For GitHub Actions, keep installation and enforcement explicit:
 - uses: actions/setup-go@v7
   with:
     go-version: "1.25.x"
-- run: go install github.com/ExtroNovosib/solidify@v0.1.0
+- run: go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.1.0
 - run: solidlint ./...
 ```
 
@@ -55,7 +55,7 @@ described below intentionally exposes only package-scoped analyzers.
 ## Usage
 
 ```sh
-go build -o solidlint .
+go build -o solidlint ./cmd/solidlint
 ./solidlint ./...
 ./solidlint -profile=all -fail=false ./...
 ./solidlint -enable-checks=SOLID-S/complex-function ./...

@@ -3,6 +3,7 @@
 set -eu
 
 module="github.com/ExtroNovosib/solidify"
+command="$module/cmd/solidlint"
 version="${SOLIDLINT_VERSION:-}"
 
 if [ -z "$version" ]; then
@@ -11,7 +12,11 @@ if [ -z "$version" ]; then
 fi
 
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/solidlint-consumer-smoke.XXXXXX")"
-trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
+cleanup() {
+	chmod -R u+w "$work_dir" 2>/dev/null || true
+	rm -rf "$work_dir"
+}
+trap cleanup EXIT HUP INT TERM
 
 export GOBIN="$work_dir/bin"
 export GOCACHE="$work_dir/go-build"
@@ -20,7 +25,7 @@ export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
 
 mkdir -p "$GOBIN" "$work_dir/consumer"
 
-go install "$module@$version"
+go install "$command@$version"
 
 installed_version="$($GOBIN/solidlint -version)"
 if [ "$installed_version" = "dev" ] || [ -z "$installed_version" ]; then
