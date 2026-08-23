@@ -16,7 +16,7 @@ BASELINE ?= .solidlint-baseline.json
 # Self-check scope: lint the analyzer implementation, not fixture corpora.
 LINT_PKG := ./internal/analyzer/...
 
-.PHONY: all build plugin run report enforce install test test-unit test-integration test-race coverage vet vulncheck fmt fmt-check golangci-lint lint smoke precision cli-e2e plugin-module-e2e plugin-go-e2e e2e cache-parity sarif-check schema-check release-snapshot version-check check clean help
+.PHONY: all build plugin run report enforce install test test-unit test-integration test-race coverage vet vulncheck fmt fmt-check golangci-lint lint smoke precision cli-e2e plugin-module-e2e plugin-go-e2e e2e cache-parity sarif-check schema-check release-consumer-smoke release-snapshot version-check check clean help
 
 all: build
 
@@ -114,6 +114,10 @@ sarif-check:
 schema-check:
 	$(GO) test ./... -run 'Test(IssuesJSON|EncodeIssuesJSON)' -count=1
 
+release-consumer-smoke:
+	@test -n "$(SOLIDLINT_VERSION)" || (echo "SOLIDLINT_VERSION is required (for example, v0.1.0)" >&2; exit 2)
+	SOLIDLINT_VERSION=$(SOLIDLINT_VERSION) ./scripts/release-consumer-smoke.sh
+
 release-snapshot:
 	@if command -v $(GORELEASER) >/dev/null 2>&1; then $(GORELEASER) release --snapshot --clean; else echo "goreleaser is required for release-snapshot" >&2; exit 1; fi
 
@@ -151,6 +155,7 @@ help:
 	@echo "  precision - run the positive/negative corpus precision gate"
 	@echo "  sarif-check - validate representative SARIF output through regression tests"
 	@echo "  schema-check - validate CLI JSON output against solidlint-result-v3.schema.json"
+	@echo "  release-consumer-smoke - install a published version and exercise its CLI and GolangCI module plugin"
 	@echo "  release-snapshot - build release archives, checksums, and SBOMs with GoReleaser"
 	@echo "  version-check - verify linker-injected version reporting surfaces"
 	@echo "  check   - run every local reliability gate"

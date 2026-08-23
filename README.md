@@ -22,6 +22,36 @@ A types-required check never emits from an incomplete package. Type information 
 metrics, interface contracts, embedded interfaces, concrete dependencies, and
 module-wide OCP correlation; all checks remain explicitly heuristic.
 
+## Installation
+
+`solidlint` requires Go 1.25 when installed from source. Pin a release in local
+and CI automation so upgrades remain deliberate:
+
+```sh
+go install github.com/ExtroNovosib/solidify@v0.1.0
+solidlint -version
+solidlint -fail=false ./...
+```
+
+Prebuilt Linux, macOS, and Windows archives for amd64 and arm64 are available
+from [GitHub Releases](https://github.com/ExtroNovosib/solidify/releases). Each
+release includes SHA-256 checksums and archive SBOMs. Prebuilt binaries do not
+require a local Go toolchain.
+
+For GitHub Actions, keep installation and enforcement explicit:
+
+```yaml
+- uses: actions/setup-go@v7
+  with:
+    go-version: "1.25.x"
+- run: go install github.com/ExtroNovosib/solidify@v0.1.0
+- run: solidlint ./...
+```
+
+Use the standalone CLI when you need all checks, module-wide correlations,
+architecture policy, baselines, JSON, or SARIF. The GolangCI-Lint module plugin
+described below intentionally exposes only package-scoped analyzers.
+
 ## Usage
 
 ```sh
@@ -279,16 +309,55 @@ explicit concrete contract rather than a field-level DIP violation.
 
 ## GolangCI-Lint plugins
 
-The recommended integration is the GolangCI-Lint v2.12.2 module plugin. Build a
-custom binary from `.custom-gcl.yml` with `golangci-lint custom`; the adapter is
-registered as `solidlint` from `plugin/solidlint`.
+The recommended integration is the GolangCI-Lint v2.12.2 module plugin. It is
+compiled into a custom GolangCI-Lint binary; installing `solidlint` does not add
+it to the stock `golangci-lint` executable.
+
+Add `.custom-gcl.yml` to the consuming repository:
+
+```yaml
+version: v2.12.2
+name: golangci-lint-solidlint
+destination: ./.bin
+plugins:
+  - module: github.com/ExtroNovosib/solidify
+    import: github.com/ExtroNovosib/solidify/plugin/solidlint
+    version: v0.1.0
+```
+
+Enable the module plugin in `.golangci.yml`:
+
+```yaml
+version: "2"
+linters:
+  default: none
+  enable:
+    - solidlint
+  settings:
+    custom:
+      solidlint:
+        type: module
+        description: explainable package-scoped SOLID checks
+        settings:
+          profile: stable
+```
+
+Build and run the pinned custom executable:
+
+```sh
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 custom -v
+./.bin/golangci-lint-solidlint run ./...
+```
+
+The adapter is registered as `solidlint` from `plugin/solidlint`. Commit both
+configuration files, but normally ignore the generated `.bin` directory.
 
 The compatibility shared-object entry point is `cmd/solidlint-golangci`. Build
 it with exactly the same Go 1.25.x toolchain, CGO setting, and overlapping
 dependency graph as the host. Releases never distribute host-specific `.so`
 files.
 
-Build the plugin module:
+Build the compatibility plugin from a Solidify checkout:
 
 ```sh
 make plugin
@@ -296,19 +365,22 @@ make plugin
 go build -tags plugin -buildmode=plugin -o bin/solidlint.so ./cmd/solidlint-golangci
 ```
 
-Example `golangci-lint` settings:
+Compatibility plugin settings use GolangCI-Lint v2 syntax:
 
 ```yaml
-linters-settings:
-  custom:
-    solidisp:
-      type: plugin
-      path: ./bin/solidlint.so
-      description: solidlint ISP package checks
-    soliddip:
-      type: plugin
-      path: ./bin/solidlint.so
-      description: solidlint DIP package checks
+version: "2"
+linters:
+  default: none
+  enable:
+    - solidlint
+  settings:
+    custom:
+      solidlint:
+        type: goplugin
+        path: ./bin/solidlint.so
+        description: host-built solidlint compatibility plugin
+        settings:
+          profile: stable
 ```
 
 The plugins expose exactly the nine SRP checks, `SOLID-L/non-exact-eof`, all
