@@ -17,7 +17,7 @@ BASELINE ?= .solidlint-baseline.json
 # Self-check scope: lint the analyzer implementation, not fixture corpora.
 LINT_PKG := ./internal/analyzer/...
 
-.PHONY: all build plugin run report enforce install test test-unit test-integration test-race coverage vet vulncheck fmt fmt-check golangci-lint lint smoke precision cli-e2e plugin-module-e2e plugin-go-e2e e2e cache-parity sarif-check schema-check release-consumer-smoke release-snapshot version-check check clean help
+.PHONY: all build plugin run report enforce install test test-unit test-integration test-e2e test-race coverage vet vulncheck fmt fmt-check golangci-lint lint smoke precision cli-e2e plugin-module-e2e plugin-go-e2e e2e cache-parity sarif-check schema-check release-consumer-smoke release-snapshot version-check check-fast check check-release clean help
 
 all: build
 
@@ -49,10 +49,13 @@ test:
 	$(GO) test $(GOFLAGS) ./...
 
 test-unit:
-	$(GO) test $(GOFLAGS) ./internal/analyzer ./internal/config ./internal/baseline ./internal/report ./internal/analysisapi ./plugin/solidlint -count=1
+	$(GO) test $(GOFLAGS) ./internal/analyzer ./internal/config ./internal/baseline ./internal/report ./internal/analysisapi ./internal/cli ./plugin/solidlint ./cmd/solidlint -count=1
 
 test-integration:
 	$(GO) test $(GOFLAGS) ./tests/integration -count=1
+
+test-e2e:
+	$(GO) test $(GOFLAGS) ./tests/e2e -run '^(TestLegacyExplicitCheckProcessParity|TestAllProfileSelfScanHasNoCoordinatorComplexFunctionFindings|TestE2EArtifactsStayOutsideScannedWorkspace|TestDocumentedCLIExamples)$$' -count=1
 
 test-race:
 	$(GO) test $(GOFLAGS) -race ./...
@@ -84,7 +87,7 @@ smoke: build
 	$(BUILD) testdata/clean
 
 precision:
-	$(GO) test ./internal/analyzer -run TestPrecisionCorpus -count=1
+	$(GO) test ./internal/analyzer -run '^(TestPrecisionCorpus|TestStableEvaluationManifestCoverageAndVerdicts)$$' -count=1
 
 cli-e2e: build
 	$(BUILD) -profile=stable -format=json -fail=false ./testdata/violations > $(BUILD_DIR)/stable.json
@@ -92,10 +95,7 @@ cli-e2e: build
 	$(BUILD) -analysis=syntax -fail=false ./testdata/clean
 
 plugin-module-e2e:
-	$(GO) test $(GOFLAGS) ./plugin/solidlint ./internal/analysisapi -count=1
-	$(GOLANGCI_LINT) custom -v
-	@cd internal/analysisapi/testdata/src/fat && ! GOCACHE=$(CURDIR)/.cache/go-build ../../../../../bin/solidlint-golangci run -c ../../../../../.golangci-plugin.yml ./... > ../../../../../$(BUILD_DIR)/plugin-module-e2e.log 2>&1
-	@grep -q 'SOLID-I/fat-interface' $(BUILD_DIR)/plugin-module-e2e.log
+	$(GO) test $(GOFLAGS) ./tests/e2e -run '^TestCustomGolangCIModulePluginHonorsSelectedChecks$$' -count=1
 
 plugin-go-e2e: $(BUILD_DIR)
 	@if [ "$$(uname -s)" = Linux ]; then \
@@ -105,15 +105,15 @@ plugin-go-e2e: $(BUILD_DIR)
 	else echo "Go shared plugins are verified on Linux CI"; fi
 
 cache-parity:
-	$(GO) test ./internal/analyzer -run 'TestPackageCache|Test.*Cache.*Parity' -count=1
+	$(GO) test ./internal/analyzer -run 'Test.*Cache' -count=1
 
-e2e: cli-e2e plugin-module-e2e plugin-go-e2e release-snapshot
+e2e: test-e2e plugin-module-e2e plugin-go-e2e
 
 sarif-check:
 	$(GO) test ./... -run 'TestSARIF' -count=1
 
 schema-check:
-	$(GO) test ./... -run 'Test(IssuesJSON|EncodeIssuesJSON)' -count=1
+	$(GO) test ./internal/config ./internal/report ./internal/baseline -run 'Test.*(Schema|JSON)' -count=1
 
 release-consumer-smoke:
 	@test -n "$(SOLIDLINT_VERSION)" || (echo "SOLIDLINT_VERSION is required (for example, v0.1.0)" >&2; exit 2)
@@ -130,7 +130,11 @@ version-check: $(BUILD_DIR)
 	@$(VERSION_BUILD) -cache-debug -fail=false ./testdata/clean >/dev/null 2>$(BUILD_DIR)/version-check.stderr
 	@grep -q 'version=$(TEST_VERSION)' $(BUILD_DIR)/version-check.stderr
 
-check: fmt-check vet test-unit test-integration test test-race coverage lint smoke precision cli-e2e cache-parity sarif-check schema-check plugin-module-e2e plugin-go-e2e version-check vulncheck
+check-fast: fmt-check vet test-unit test-integration lint
+
+check: check-fast test-e2e test-race coverage smoke precision cli-e2e cache-parity sarif-check schema-check plugin-module-e2e plugin-go-e2e version-check vulncheck
+
+check-release: check release-snapshot release-consumer-smoke
 
 clean:
 	rm -rf $(BUILD_DIR)
@@ -144,6 +148,9 @@ help:
 	@echo "  enforce - fail on new analyzer findings, relative to $(BASELINE)"
 	@echo "  install - install $(BINARY) to GOPATH/bin"
 	@echo "  test    - run go test ./..."
+	@echo "  test-unit - run focused unit/package tests"
+	@echo "  test-integration - run cross-package integration tests"
+	@echo "  test-e2e - run standalone CLI subprocess journeys"
 	@echo "  test-race - run the full test suite with the race detector"
 	@echo "  coverage - enforce the analyzer coverage floor"
 	@echo "  vet     - run go vet ./..."
@@ -159,6 +166,8 @@ help:
 	@echo "  release-consumer-smoke - install a published version and exercise its CLI and GolangCI module plugin"
 	@echo "  release-snapshot - build release archives, checksums, and SBOMs with GoReleaser"
 	@echo "  version-check - verify linker-injected version reporting surfaces"
-	@echo "  check   - run every local reliability gate"
+	@echo "  check-fast - run the short formatting, vet, unit, integration, and lint loop"
+	@echo "  check   - run every local reliability gate once"
+	@echo "  check-release - run check plus release snapshot and external-consumer smoke"
 	@echo "  clean   - remove $(BUILD_DIR)/"
 	@echo "  help    - show this help"

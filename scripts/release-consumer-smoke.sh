@@ -66,8 +66,19 @@ EOF
 (
 	cd "$work_dir/consumer"
 	"$GOBIN/solidlint" -format=json -fail=false ./... >"$work_dir/cli.json"
+	"$GOBIN/solidlint" check -format=json -fail=false ./... >"$work_dir/cli-check.json"
+	cmp "$work_dir/cli.json" "$work_dir/cli-check.json"
+	"$GOBIN/solidlint" checks list -format=json >"$work_dir/checks.json"
+	"$GOBIN/solidlint" checks explain SOLID-I/fat-interface -format=json >"$work_dir/explain.json"
+	"$GOBIN/solidlint" config init >.solidify.yml
+	"$GOBIN/solidlint" config validate .solidify.yml
+	"$GOBIN/solidlint" config schema -format=json >"$work_dir/config-schema.json"
+	"$GOBIN/solidlint" stats -format=json ./... >"$work_dir/stats.json"
+	"$GOBIN/solidlint" baseline init -baseline .solidlint-baseline.json -baseline-reason "Reviewed external smoke debt" -baseline-owner release-smoke ./...
 )
 grep -q 'SOLID-I/fat-interface' "$work_dir/cli.json"
+grep -q '"version": 5' "$work_dir/consumer/.solidlint-baseline.json"
+grep -q 'Reviewed external smoke debt' "$work_dir/consumer/.solidlint-baseline.json"
 
 cat >"$work_dir/.custom-gcl.yml" <<EOF
 version: v2.12.2
@@ -91,6 +102,8 @@ linters:
         description: explainable package-scoped SOLID checks
         settings:
           profile: stable
+          enabled_rules: [I]
+          enabled_checks: [SOLID-I/fat-interface]
 EOF
 
 (

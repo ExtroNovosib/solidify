@@ -125,20 +125,19 @@ func packageFilesFromLoaded(selected map[string]*packages.Package, root, mode st
 			fset = token.NewFileSet()
 		}
 		pf := &packageFiles{
-			dir:             pkg.Dir,
-			fset:            fset,
-			files:           pkg.Syntax,
-			info:            pkg.TypesInfo,
-			typePkg:         pkg.Types,
-			typeComplete:    mode != syntaxAnalysisMode && pkg.Types != nil && pkg.TypesInfo != nil && !pkg.IllTyped,
-			pkgPath:         pkg.PkgPath,
-			pkgName:         pkg.Name,
-			modulePath:      modulePath(pkg),
-			imports:         sortedImportPaths(pkg.Imports),
-			typeImports:     packageTypeImports(pkg.Imports),
-			dependencyFacts: dependencyFactManifest(pkg),
-			analysisRoot:    root,
-			generated:       map[*ast.File]bool{},
+			dir:          pkg.Dir,
+			fset:         fset,
+			files:        pkg.Syntax,
+			info:         pkg.TypesInfo,
+			typePkg:      pkg.Types,
+			typeComplete: mode != syntaxAnalysisMode && pkg.Types != nil && pkg.TypesInfo != nil && !pkg.IllTyped,
+			pkgPath:      pkg.PkgPath,
+			pkgName:      pkg.Name,
+			modulePath:   modulePath(pkg),
+			imports:      sortedImportPaths(pkg.Imports),
+			typeImports:  packageTypeImports(pkg.Imports),
+			analysisRoot: root,
+			generated:    map[*ast.File]bool{},
 		}
 		for _, file := range pf.files {
 			pf.generated[file] = ast.IsGenerated(file)
@@ -208,62 +207,6 @@ func canonicalRoot(pkgs []*packageFiles) string {
 		}
 	}
 	return ""
-}
-
-func dependencyFactManifest(pkg *packages.Package) string {
-	if pkg == nil || len(pkg.Imports) == 0 {
-		return ""
-	}
-	paths := make([]string, 0, len(pkg.Imports))
-	for path := range pkg.Imports {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	var b strings.Builder
-	for _, path := range paths {
-		dep := pkg.Imports[path]
-		b.WriteString(path)
-		b.WriteByte(0)
-		if dep != nil && dep.Types != nil {
-			names := append([]string(nil), dep.Types.Scope().Names()...)
-			sort.Strings(names)
-			for _, name := range names {
-				obj := dep.Types.Scope().Lookup(name)
-				b.WriteString(name)
-				b.WriteByte('=')
-				if obj != nil {
-					b.WriteString(obj.String())
-				}
-				b.WriteByte(0)
-			}
-		}
-		if dep != nil && dep.ExportFile != "" {
-			b.WriteString("export=")
-			if exportData, err := os.ReadFile(dep.ExportFile); err == nil {
-				b.Write(exportData)
-			} else {
-				b.WriteString(dep.ExportFile)
-			}
-			b.WriteByte(0)
-		}
-		var files []string
-		if dep != nil {
-			files = append(files, dep.CompiledGoFiles...)
-			if len(files) == 0 {
-				files = append(files, dep.GoFiles...)
-			}
-		}
-		sort.Strings(files)
-		for _, filename := range files {
-			b.WriteString(filepath.ToSlash(filename))
-			b.WriteByte(0)
-			if source, err := os.ReadFile(filename); err == nil {
-				b.Write(source)
-			}
-			b.WriteByte(0)
-		}
-	}
-	return b.String()
 }
 
 // FilterExcludedFiles applies configured excludes before any package or
@@ -467,8 +410,8 @@ func sourceFactManifest(pkg *packageFiles) string {
 		filename := pkg.fset.Position(file.Pos()).Filename
 		facts.WriteString(PortablePath(pkg.analysisRoot, filename))
 		facts.WriteByte(0)
-		if source, err := os.ReadFile(filename); err == nil {
-			facts.Write(source)
+		if digest, err := fileContentDigest(filename); err == nil {
+			facts.WriteString(digest)
 		}
 		facts.WriteByte(0)
 	}

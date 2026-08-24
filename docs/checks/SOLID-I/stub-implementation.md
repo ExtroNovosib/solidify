@@ -1,25 +1,37 @@
 # SOLID-I/stub-implementation
 
-Heuristic check for **stub implementation** smells in Go code.
-
-Example: scan the package directory and review the reported evidence before suppressing with `//solidify:ignore SOLID-I/stub-implementation reason`.
+Reports interface implementations forced to panic or return `errors.ErrUnsupported` for an operation they cannot support.
 
 ## Product contract
 
-- Maturity: **stable**. Experimental checks require `profile: all`, `-profile=all`, or explicit `enabled_checks`.
-- Analysis modes: types required; withheld in syntax and incomplete-auto packages.
-- Surfaces: standalone CLI, module plugin, and matched-ABI Go plugin.
-- Evidence names the matched source construct; metrics record measured values, configured thresholds, and comparators. Fingerprints use the check ID, portable path, subject, and identity, never the message or measured counts.
+Maturity: **stable**
+
+Analysis modes: types required; unavailable in syntax-only mode.
+
+Surfaces: standalone CLI and both GolangCI plugin modes.
 
 ## Examples
 
+Positive: [stable positive evaluation fixture](../../../testdata/evaluation/positive/stable.go).
+
+Clean: [stable negative evaluation fixture](../../../testdata/evaluation/negative/stable.go).
+
+Evaluation case `stable-stub-implementation` is in the [positive fixture](../../../testdata/evaluation/positive/stable.go); the [negative fixture](../../../testdata/evaluation/negative/stable.go) implements every method normally.
+
 ```go
-// Positive: the focused positive fixture for SOLID-I/stub-implementation crosses the documented signal.
-// Clean: its boundary and clean counterexamples remain at or below the signal.
+package example
+
+import "errors"
+type Repository interface { Get() error; Save() error }
+type ReadOnlyRepository struct{}
+func (ReadOnlyRepository) Get() error { return nil }
+func (ReadOnlyRepository) Save() error { return errors.ErrUnsupported }
 ```
 
-The analyzer corpus contains the executable positive, boundary, and clean examples. Run `go test ./internal/analyzer -count=1` and `make precision` after changing detection behavior.
+## Evidence and configuration
+
+Evidence identifies the method, implemented interface, and stub kind. `isp_min_methods` limits the interface surfaces considered. Complete type information is required to prove the method participates in an interface implementation.
 
 ## Limitations and remediation
 
-This is an explainable heuristic, not proof of a design defect. Review generated code, DTOs, composition roots, adapters, thin wrappers, and framework contracts before refactoring. Prefer a behavior-preserving extraction or narrower consumer-owned abstraction. The only automatic fix is a reason-bearing `//solidify:ignore SOLID-I/stub-implementation ...` triage comment; baselines v4 accept reviewed debt without changing source. Configure canonical snake_case thresholds where the check exposes them, and use exact IDs in `disabled_checks`, severity overrides, suppressions, and baselines.
+Temporary migration adapters and explicitly optional protocols can legitimately reject operations. Prefer splitting capability interfaces when callers can depend on the smaller contract. The analyzer no longer offers suppression insertion as a safe fix; suppression and baseline v5 remain explicit review workflows. See the [stable v0.2 evaluation](../../evaluations/stable-v0.2.md).

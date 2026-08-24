@@ -20,13 +20,3 @@ func IgnoreSuppressionFix(issue Issue, reason string) SuggestedFix {
 		}},
 	}
 }
-
-// AttachDefaultSuppressions adds an ignore-template fix when none are present.
-func AttachDefaultSuppressions(issues []Issue) {
-	for i := range issues {
-		if len(issues[i].SuggestedFixes) > 0 {
-			continue
-		}
-		issues[i].SuggestedFixes = []SuggestedFix{IgnoreSuppressionFix(issues[i], "accepted for now")}
-	}
-}

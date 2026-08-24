@@ -3,8 +3,71 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestCacheDigestIOIsLazyAndCompact(t *testing.T) {
+	root := testdataDir(t, "violations")
+	pkgs, _, err := LoadWorkspace([]string{root}, false, "types")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pkg := range pkgs {
+		if pkg.dependencyFacts != "" {
+			t.Fatalf("package %s eagerly retained dependency source/export data", pkg.pkgPath)
+		}
+	}
+	cfg := DefaultConfig()
+	cfg.CacheDir = filepath.Join(t.TempDir(), "cache")
+	plan, err := NewExecutionPlan(cfg, allRulesEnabled(), SurfaceCLI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := newPackageCache(cfg.CacheDir, cfg, plan)
+	if reads := cache.sourceReads.Load(); reads != 0 {
+		t.Fatalf("source reads before cache key demand = %d", reads)
+	}
+	for _, pkg := range pkgs {
+		digest := cache.packageHash(pkg)
+		if len(digest) != 64 || strings.Contains(digest, "package ") {
+			t.Fatalf("package digest is not compact SHA-256: %q", digest)
+		}
+	}
+	if reads := cache.sourceReads.Load(); reads == 0 {
+		t.Fatal("cache key demand did not hash local sources")
+	}
+}
+
+func TestProgramCacheWarmHitPreservesFindings(t *testing.T) {
+	root := testdataDir(t, "violations")
+	cfg := DefaultConfig()
+	cfg.CacheDir = filepath.Join(t.TempDir(), "cache")
+	enabled := map[Rule]bool{RuleOCP: true}
+	plan, err := NewExecutionPlan(cfg, enabled, SurfaceCLI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkgs, _, err := LoadWorkspace([]string{root}, false, "types")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cold, coldStats := RunPlan(pkgs, cfg, plan)
+	pkgs, _, err = LoadWorkspace([]string{root}, false, "types")
+	if err != nil {
+		t.Fatal(err)
+	}
+	warm, warmStats := RunPlan(pkgs, cfg, plan)
+	if issueSignatures(cold) != issueSignatures(warm) {
+		t.Fatalf("program cache changed findings\ncold=%v\nwarm=%v", cold, warm)
+	}
+	if len(coldStats.Groups) != 1 || coldStats.Groups[0].Executions != 1 || coldStats.Groups[0].CacheMisses != 1 {
+		t.Fatalf("cold program stats = %+v", coldStats.Groups)
+	}
+	if len(warmStats.Groups) != 1 || warmStats.Groups[0].Executions != 0 || warmStats.Groups[0].CacheHits != 1 {
+		t.Fatalf("warm program stats = %+v", warmStats.Groups)
+	}
+}
 
 func TestPackageCacheCorruptEntryCountsAsMiss(t *testing.T) {
 	dir := t.TempDir()
@@ -36,17 +99,22 @@ type Service struct { driver *other.Driver }
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache := newPackageCache(cfg.CacheDir, cfg, enabled)
+	plan, err := NewExecutionPlan(cfg, enabled, SurfaceCLI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := newPackageCache(cfg.CacheDir, cfg, plan)
 	issues := Run(pkgs, cfg, enabled)
 	if len(issues) != 1 {
 		t.Fatalf("initial findings = %v, want one", issues)
 	}
 
-	path := cache.entryPath(pkgs[0], CheckDIPConcreteDependency)
+	cacheID := groupCacheID(plan.Groups()[0])
+	path := cache.entryPath(pkgs[0], cacheID)
 	if err := os.WriteFile(path, []byte(`{"version":"solidlint-cache-v6","hash":"truncated`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := cache.load(pkgs[0], CheckDIPConcreteDependency); ok {
+	if _, ok := cache.load(pkgs[0], cacheID); ok {
 		t.Fatal("truncated cache entry should miss")
 	}
 	if cache.corrupt.Load() != 1 {
@@ -54,7 +122,7 @@ type Service struct { driver *other.Driver }
 	}
 }
 
-func TestPackageCacheWarmHitPreservesSuggestedFixes(t *testing.T) {
+func TestPackageCacheWarmHitPreservesAbsenceOfUnownedFixes(t *testing.T) {
 	root := testdataDir(t, "violations")
 	cfg := DefaultConfig()
 	cfg.CacheDir = filepath.Join(t.TempDir(), "cache")
@@ -64,15 +132,10 @@ func TestPackageCacheWarmHitPreservesSuggestedFixes(t *testing.T) {
 		t.Fatal(err)
 	}
 	cold := Run(pkgs, cfg, enabled)
-	var stub *Issue
-	for index := range cold {
-		if cold[index].Check == CheckISPStubImplementation && len(cold[index].SuggestedFixes) > 0 {
-			stub = &cold[index]
-			break
+	for _, issue := range cold {
+		if len(issue.SuggestedFixes) != 0 {
+			t.Fatalf("cold finding has unowned fix: %+v", issue)
 		}
-	}
-	if stub == nil {
-		t.Fatal("expected ISP stub finding with suggested fixes")
 	}
 
 	pkgs, _, err = LoadWorkspace([]string{root}, false, "types")
@@ -80,23 +143,9 @@ func TestPackageCacheWarmHitPreservesSuggestedFixes(t *testing.T) {
 		t.Fatal(err)
 	}
 	warm := Run(pkgs, cfg, enabled)
-	var warmStub *Issue
-	for index := range warm {
-		if warm[index].Check == CheckISPStubImplementation {
-			warmStub = &warm[index]
-			break
+	for _, issue := range warm {
+		if len(issue.SuggestedFixes) != 0 {
+			t.Fatalf("warm finding has unowned fix: %+v", issue)
 		}
-	}
-	if warmStub == nil {
-		t.Fatal("expected warm ISP stub finding")
-	}
-	if len(warmStub.SuggestedFixes) != len(stub.SuggestedFixes) {
-		t.Fatalf("warm suggested fixes = %d, want %d", len(warmStub.SuggestedFixes), len(stub.SuggestedFixes))
-	}
-	if warmStub.SuggestedFixes[0].Message != stub.SuggestedFixes[0].Message {
-		t.Fatalf("warm fix message = %q, want %q", warmStub.SuggestedFixes[0].Message, stub.SuggestedFixes[0].Message)
-	}
-	if len(warmStub.SuggestedFixes[0].Edits) != len(stub.SuggestedFixes[0].Edits) {
-		t.Fatalf("warm fix edits = %d, want %d", len(warmStub.SuggestedFixes[0].Edits), len(stub.SuggestedFixes[0].Edits))
 	}
 }

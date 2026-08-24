@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -23,7 +24,7 @@ type pluginSettings struct {
 
 type resolvedSettings struct {
 	config   analyzer.Config
-	selected map[analyzer.CheckID]bool
+	plan     analyzer.ExecutionPlan
 	severity map[string]analyzer.Severity
 }
 
@@ -33,20 +34,16 @@ func NewAnalyzers(settings any) ([]*analysis.Analyzer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []*analysis.Analyzer{
-		newPackageAnalyzer("solidsrp", "reports package-scoped SRP findings", resolved, func(snapshot *analyzer.PackageSnapshot, cfg analyzer.Config) []analyzer.Issue {
-			return snapshot.RunSRP(cfg)
-		}),
-		newPackageAnalyzer("solidlsp", "reports package-scoped LSP findings", resolved, func(snapshot *analyzer.PackageSnapshot, cfg analyzer.Config) []analyzer.Issue {
-			return snapshot.RunLSP(cfg)
-		}),
-		newPackageAnalyzer("solidisp", "reports package-scoped ISP findings", resolved, func(snapshot *analyzer.PackageSnapshot, cfg analyzer.Config) []analyzer.Issue {
-			return snapshot.RunISP(cfg)
-		}),
-		newPackageAnalyzer("soliddip", "reports package-scoped DIP findings", resolved, func(snapshot *analyzer.PackageSnapshot, cfg analyzer.Config) []analyzer.Issue {
-			return snapshot.RunDIP(cfg)
-		}),
-	}, nil
+	groups := resolved.plan.Groups()
+	analyzers := make([]*analysis.Analyzer, 0, len(groups))
+	for _, group := range groups {
+		name, doc, ok := packageAnalyzerIdentity(group.Name)
+		if !ok {
+			continue
+		}
+		analyzers = append(analyzers, newPackageAnalyzer(name, doc, resolved, group))
+	}
+	return analyzers, nil
 }
 
 func resolveSettings(value any) (resolvedSettings, error) {
@@ -64,6 +61,8 @@ func resolveSettings(value any) (resolvedSettings, error) {
 	}
 	cfg := analyzer.DefaultConfig()
 	cfg.Profile = settings.Profile
+	cfg.EnabledChecks = append([]analyzer.CheckID(nil), settings.EnabledChecks...)
+	cfg.DisabledChecks = append([]analyzer.CheckID(nil), settings.DisabledChecks...)
 	cfg.DIPAllowDependencies = append([]string(nil), settings.AllowDependencies...)
 	if err := analyzer.ApplyThresholds(&cfg, settings.Thresholds); err != nil {
 		return resolvedSettings{}, err
@@ -85,13 +84,9 @@ func resolveSettings(value any) (resolvedSettings, error) {
 			return resolvedSettings{}, fmt.Errorf("check %q is CLI-only and cannot run in a package plugin", id)
 		}
 	}
-	selection, err := analyzer.ResolveCheckSelection(settings.Profile, enabledRules, settings.EnabledChecks, settings.DisabledChecks)
+	plan, err := analyzer.NewExecutionPlan(cfg, enabledRules, analyzer.SurfaceModulePlugin)
 	if err != nil {
 		return resolvedSettings{}, err
-	}
-	for id := range selection {
-		metadata, _ := analyzer.CheckMetadata(id)
-		selection[id] = selection[id] && metadata.Surfaces.Supports(analyzer.SurfaceModulePlugin)
 	}
 	for target, severity := range settings.Severity {
 		if severity != analyzer.SeverityNote && severity != analyzer.SeverityWarning && severity != analyzer.SeverityError {
@@ -101,7 +96,7 @@ func resolveSettings(value any) (resolvedSettings, error) {
 			return resolvedSettings{}, fmt.Errorf("unknown severity target %q", target)
 		}
 	}
-	return resolvedSettings{config: cfg, selected: selection, severity: settings.Severity}, nil
+	return resolvedSettings{config: cfg, plan: plan, severity: settings.Severity}, nil
 }
 
 func pluginRule(code string) (analyzer.Rule, bool) {
@@ -119,23 +114,49 @@ func pluginRule(code string) (analyzer.Rule, bool) {
 	}
 }
 
-func newPackageAnalyzer(name, doc string, settings resolvedSettings, run func(*analyzer.PackageSnapshot, analyzer.Config) []analyzer.Issue) *analysis.Analyzer {
+func packageAnalyzerIdentity(group string) (name, doc string, ok bool) {
+	switch group {
+	case "srp-package":
+		return "solidsrp", "reports package-scoped SRP findings", true
+	case "lsp-package":
+		return "solidlsp", "reports package-scoped LSP findings", true
+	case "isp-package":
+		return "solidisp", "reports package-scoped ISP findings", true
+	case "dip-package":
+		return "soliddip", "reports package-scoped DIP findings", true
+	default:
+		return "", "", false
+	}
+}
+
+func newPackageAnalyzer(name, doc string, settings resolvedSettings, group analyzer.ExecutionGroup) *analysis.Analyzer {
 	return &analysis.Analyzer{Name: name, Doc: doc, RunDespiteErrors: true, Run: func(pass *analysis.Pass) (any, error) {
-		snapshot := analyzer.SnapshotFromSyntax(pass.Fset, pass.Files, pass.TypesInfo, pass.TypesInfo != nil)
-		issues := run(snapshot, settings.config)
-		filtered := issues[:0]
-		for index := range issues {
-			if !settings.selected[issues[index].Check] {
-				continue
+		modulePath := ""
+		if pass.Module != nil {
+			modulePath = pass.Module.Path
+		}
+		pkgPath, pkgName := "", ""
+		imports := map[string]*types.Package{}
+		if pass.Pkg != nil {
+			pkgPath, pkgName = pass.Pkg.Path(), pass.Pkg.Name()
+			for _, imported := range pass.Pkg.Imports() {
+				imports[imported.Path()] = imported
 			}
+		}
+		snapshot := analyzer.SnapshotFromSyntax(analyzer.SnapshotInput{
+			Fset: pass.Fset, Files: pass.Files, PackagePath: pkgPath, PackageName: pkgName,
+			ModulePath: modulePath, Types: pass.Pkg, TypesInfo: pass.TypesInfo,
+			TypeErrors: pass.TypeErrors, Imports: imports,
+		})
+		issues := snapshot.RunGroup(group, settings.config)
+		for index := range issues {
 			if severity := settings.severity[issues[index].ID()]; severity != "" {
 				issues[index].Severity = severity
 			} else if severity := settings.severity[string(issues[index].Rule)]; severity != "" {
 				issues[index].Severity = severity
 			}
-			filtered = append(filtered, issues[index])
 		}
-		reportIssues(pass, filtered)
+		reportIssues(pass, issues)
 		return nil, nil
 	}}
 }

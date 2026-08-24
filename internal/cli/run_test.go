@@ -55,15 +55,15 @@ func TestPortableBaselineMatchesAcrossCheckoutDirectories(t *testing.T) {
 		t.Fatalf("checkout A findings = %v, want one", firstIssues)
 	}
 	baselinePath := filepath.Join(t.TempDir(), "baseline.json")
-	if err := writeBaseline(baselinePath, firstIssues); err != nil {
+	if err := writeBaseline(baselinePath, firstIssues, "reviewed portability contract"); err != nil {
 		t.Fatal(err)
 	}
 	accepted, version, err := readBaselineInfo(baselinePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 4 {
-		t.Fatalf("baseline version = %d, want 4", version)
+	if version != 5 {
+		t.Fatalf("baseline version = %d, want 5", version)
 	}
 
 	secondPackages, _, err := analyzer.LoadWorkspace([]string{second}, false, "types")
@@ -186,24 +186,15 @@ func TestRun_Version(t *testing.T) {
 	}
 }
 
-func TestAllPathsAreGoFiles(t *testing.T) {
-	if !allPathsAreGoFiles([]string{"manager.go", "ui.go"}) {
-		t.Fatal("expected all .go files")
-	}
-	if allPathsAreGoFiles([]string{"./internal/tunnel"}) {
-		t.Fatal("directory path should not count as go file scan")
-	}
-}
-
-func TestRun_SingleGoFilePrintsPackageTip(t *testing.T) {
+func TestSingleGoFileUsesContainingPackageWithoutObsoleteTip(t *testing.T) {
 	stderr := captureStderr(t, func() {
 		code := run([]string{"-fail=false", "testdata/verdict/god_console/console.go"})
 		if code != 0 {
 			t.Fatalf("run exit code = %d, want 0", code)
 		}
 	})
-	if !strings.Contains(stderr, "scan the package directory") {
-		t.Fatalf("stderr = %q, want package directory tip", stderr)
+	if strings.Contains(stderr, "scan the package directory") {
+		t.Fatalf("stderr contains obsolete package-directory tip: %q", stderr)
 	}
 }
 
@@ -292,7 +283,7 @@ func TestWriteBaselineRejectsIdentityCollision(t *testing.T) {
 	issue := analyzer.Issue{Rule: analyzer.RuleISP, Check: analyzer.CheckISPFatInterface, Message: "fat", Evidence: "six", Subject: "p.Wide", Identity: "interface=Wide"}
 	issue.Pos.Filename = "a.go"
 	path := filepath.Join(t.TempDir(), "baseline.json")
-	if err := writeBaseline(path, []analyzer.Issue{issue, issue}); err == nil || !strings.Contains(err.Error(), "identity collision") {
+	if err := writeBaseline(path, []analyzer.Issue{issue, issue}, "reviewed duplicate identity"); err == nil || !strings.Contains(err.Error(), "identity collision") {
 		t.Fatalf("collision error = %v", err)
 	}
 }

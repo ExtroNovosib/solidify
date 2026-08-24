@@ -1,32 +1,35 @@
 # SOLID-I/fat-interface
 
-Heuristic check for **fat interface** smells in Go code.
-
-Interfaces marked deprecated in their doc comment (`Deprecated:`, `DEPRECATED:`, or a line starting with `deprecated `) are downgraded to `note` severity so migration-in-progress types stay visible without failing default enforcement (`-fail-level=warning`).
-
-An interface that aggregates another interface already over the configured
-method limit is also downgraded to `note`. This keeps broad wiring repositories
-visible while preserving `warning` severity for the narrower business-facing
-interface that should actually be split.
-
-Example: scan the package directory and review the reported evidence before suppressing with `//solidify:ignore SOLID-I/fat-interface reason`.
+Reports interfaces whose method count exceeds the configured maximum. Deprecated interfaces and broad aggregating interfaces may be downgraded to note severity so migrations remain visible without becoming default failures.
 
 ## Product contract
 
-- Maturity: **stable**. Experimental checks require `profile: all`, `-profile=all`, or explicit `enabled_checks`.
-- Analysis modes: equivalent in syntax, auto, and types modes.
-- Surfaces: standalone CLI, module plugin, and matched-ABI Go plugin.
-- Evidence names the matched source construct; metrics record measured values, configured thresholds, and comparators. Fingerprints use the check ID, portable path, subject, and identity, never the message or measured counts.
+Maturity: **stable**
+
+Analysis modes: equivalent in syntax, auto, and types modes.
+
+Surfaces: standalone CLI and both GolangCI plugin modes.
 
 ## Examples
 
+Positive: [stable positive evaluation fixture](../../../testdata/evaluation/positive/stable.go).
+
+Clean: [stable negative evaluation fixture](../../../testdata/evaluation/negative/stable.go).
+
+Evaluation case `stable-fat-interface` declares nine methods in the [positive fixture](../../../testdata/evaluation/positive/stable.go). The [negative fixture](../../../testdata/evaluation/negative/stable.go) declares exactly eight.
+
 ```go
-// Positive: the focused positive fixture for SOLID-I/fat-interface crosses the documented signal.
-// Clean: its boundary and clean counterexamples remain at or below the signal.
+package example
+
+type WidePort interface {
+	A(); B(); C(); D(); E(); F(); G(); H(); I()
+}
 ```
 
-The analyzer corpus contains the executable positive, boundary, and clean examples. Run `go test ./internal/analyzer -count=1` and `make precision` after changing detection behavior.
+## Evidence and configuration
+
+Evidence is `fat-interface:interface=WidePort;methods=9;max=8`. Configure `max_interface_methods`; syntax, auto, and types modes produce equivalent method-count evidence.
 
 ## Limitations and remediation
 
-This is an explainable heuristic, not proof of a design defect. Review generated code, DTOs, composition roots, adapters, thin wrappers, and framework contracts before refactoring. Prefer a behavior-preserving extraction or narrower consumer-owned abstraction. The only automatic fix is a reason-bearing `//solidify:ignore SOLID-I/fat-interface ...` triage comment; baselines v4 accept reviewed debt without changing source. Configure canonical snake_case thresholds where the check exposes them, and use exact IDs in `disabled_checks`, severity overrides, suppressions, and baselines.
+Framework façades, generated APIs, and explicit aggregation ports may be intentionally broad. Review consumers and implementers before splitting the interface into role-specific contracts. Solidlint does not treat accepting debt as an automatic source fix. Use a reason-bearing suppression or baseline v5 annotation after review. See the [stable v0.2 evaluation](../../evaluations/stable-v0.2.md).

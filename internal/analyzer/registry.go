@@ -179,8 +179,6 @@ func completeCheckMetadata(checks []Check) []Check {
 		if pluginChecks[check.ID] {
 			check.Surfaces |= SurfaceModulePlugin | SurfaceGoPlugin
 		}
-		// Suppression insertion is the only compile-preserving fix contract.
-		check.HasSafeFix = true
 	}
 	return checks
 }
@@ -318,8 +316,4 @@ func runISPCheck(pkg *packageFiles, cfg Config) []Issue {
 
 func runDIPPackageCheck(pkg *packageFiles, cfg Config) []Issue {
 	return CheckDIPWithTypes(pkg.fset, pkg.files, pkg.info, cfg, pkg)
-}
-
-func registryEnabled(check Check, enabled map[Rule]bool) bool {
-	return enabled[check.Rule]
 }

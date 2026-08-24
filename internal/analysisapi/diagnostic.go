@@ -9,39 +9,10 @@ import (
 	"github.com/ExtroNovosib/solidify/internal/analyzer"
 )
 
-// ISPAnalyzer wraps package-scoped ISP checks for go/analysis consumers.
-var ISPAnalyzer = &analysis.Analyzer{
-	Name:             "solidisp",
-	Doc:              "reports fat interfaces and related ISP smells",
-	Run:              runISP,
-	RunDespiteErrors: true,
-}
-
-// DIPAnalyzer wraps package-scoped DIP checks for go/analysis consumers.
-var DIPAnalyzer = &analysis.Analyzer{
-	Name:             "soliddip",
-	Doc:              "reports concrete dependencies at package boundaries",
-	Run:              runDIP,
-	RunDespiteErrors: true,
-}
-
-// Analyzers lists package-scoped analyzers exposed to golangci-lint modules.
-var Analyzers = []*analysis.Analyzer{ISPAnalyzer, DIPAnalyzer}
-
-func runISP(pass *analysis.Pass) (any, error) {
-	reportIssues(pass, analyzer.SnapshotFromSyntax(pass.Fset, pass.Files, pass.TypesInfo, pass.TypesInfo != nil).RunISP(analyzer.DefaultConfig()))
-	return nil, nil
-}
-
-func runDIP(pass *analysis.Pass) (any, error) {
-	reportIssues(pass, analyzer.SnapshotFromSyntax(pass.Fset, pass.Files, pass.TypesInfo, pass.TypesInfo != nil).RunDIP(analyzer.DefaultConfig()))
-	return nil, nil
-}
-
 func reportIssues(pass *analysis.Pass, issues []analyzer.Issue) {
 	for _, issue := range issues {
 		start := diagnosticPos(pass.Fset, issue.Pos)
-		diag := analysis.Diagnostic{
+		diagnostic := analysis.Diagnostic{
 			Pos:            start,
 			Category:       issue.ID(),
 			URL:            analyzer.CheckHelpURI(issue.Check),
@@ -49,16 +20,16 @@ func reportIssues(pass *analysis.Pass, issues []analyzer.Issue) {
 			SuggestedFixes: suggestedFixes(pass.Fset, issue),
 		}
 		if end := diagnosticPos(pass.Fset, issue.End); end != token.NoPos && end > start {
-			diag.End = end
+			diagnostic.End = end
 		}
 		for _, related := range issue.Related {
 			pos := diagnosticPos(pass.Fset, related.Pos)
 			if pos == token.NoPos {
 				continue
 			}
-			diag.Related = append(diag.Related, analysis.RelatedInformation{Pos: pos, Message: related.Message})
+			diagnostic.Related = append(diagnostic.Related, analysis.RelatedInformation{Pos: pos, Message: related.Message})
 		}
-		pass.Report(diag)
+		pass.Report(diagnostic)
 	}
 }
 
@@ -67,9 +38,9 @@ func diagnosticPos(fset *token.FileSet, pos token.Position) token.Pos {
 		return token.NoPos
 	}
 	var file *token.File
-	fset.Iterate(func(f *token.File) bool {
-		if f.Name() == pos.Filename {
-			file = f
+	fset.Iterate(func(candidate *token.File) bool {
+		if candidate.Name() == pos.Filename {
+			file = candidate
 			return false
 		}
 		return true

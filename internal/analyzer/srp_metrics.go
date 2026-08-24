@@ -27,29 +27,38 @@ func CheckSRPWithTypes(in SRPCheckInput) []Issue {
 
 func checkSRPWithTypes(in SRPCheckInput) []Issue {
 	issues := checkSRPSyntax(in.Fset, in.Files, in.Config, in.PkgFiles)
-	if in.TypeComplete && in.Info != nil {
+	parameterChecks := checkEnabled(in.Config, CheckSRPMixedInputSurface) || checkEnabled(in.Config, CheckSRPDataClump) || checkEnabled(in.Config, CheckSRPFlagArgument)
+	if parameterChecks && in.TypeComplete && in.Info != nil {
 		issues = removeIssuesByCheck(issues, CheckSRPMixedInputSurface)
 		issues = removeIssuesByCheck(issues, CheckSRPDataClump)
 		issues = removeIssuesByCheck(issues, CheckSRPFlagArgument)
-		issues = append(issues, typedParameterIssues(in.Fset, in.Files, in.Info, in.Config, in.PkgFiles)...)
+		issues = append(issues, filterSelectedIssues(typedParameterIssues(in.Fset, in.Files, in.Info, in.Config, in.PkgFiles), in.Config)...)
+	}
+	profileChecks := checkEnabled(in.Config, CheckSRPLargeType) || checkEnabled(in.Config, CheckSRPGodType) || checkEnabled(in.Config, CheckSRPHighFanOutType) || checkEnabled(in.Config, CheckSRPMixedImportClusters) || checkEnabled(in.Config, CheckSRPLowCohesionType)
+	if !profileChecks {
+		return issues
 	}
 	profiles := buildSRPTypeProfiles(in.Fset, in.Files, in.Info, in.Pkg, in.PkgFiles)
 	issues = removeIssuesByCheck(issues, CheckSRPLargeType)
 	for _, profile := range profiles {
-		if large := srpProfileLargeTypeIssue(profile, in.Fset, in.Config, in.TypeComplete); large != nil {
-			issues = append(issues, *large)
+		if checkEnabled(in.Config, CheckSRPLargeType) {
+			if large := srpProfileLargeTypeIssue(profile, in.Fset, in.Config, in.TypeComplete); large != nil {
+				issues = append(issues, *large)
+			}
 		}
 		var god *Issue
-		if in.TypeComplete {
+		if in.TypeComplete && checkEnabled(in.Config, CheckSRPGodType) {
 			god = srpProfileGodTypeIssue(profile, in.Fset, in.Config)
 		}
-		if god == nil {
+		if god == nil && checkEnabled(in.Config, CheckSRPHighFanOutType) {
 			if fanout := srpProfileFanOutIssue(profile, in.Fset, in.Config); fanout != nil {
 				issues = append(issues, *fanout)
 			}
 		}
-		if mixed := srpProfileMixedImportClustersIssue(profile, in.Fset, in.Config); mixed != nil {
-			issues = append(issues, *mixed)
+		if checkEnabled(in.Config, CheckSRPMixedImportClusters) {
+			if mixed := srpProfileMixedImportClustersIssue(profile, in.Fset, in.Config); mixed != nil {
+				issues = append(issues, *mixed)
+			}
 		}
 		if !in.TypeComplete {
 			continue
@@ -58,11 +67,23 @@ func checkSRPWithTypes(in SRPCheckInput) []Issue {
 			issues = append(issues, *god)
 			continue
 		}
-		if low := srpProfileLowCohesionIssue(profile, in.Fset, in.Config); low != nil {
-			issues = append(issues, *low)
+		if checkEnabled(in.Config, CheckSRPLowCohesionType) {
+			if low := srpProfileLowCohesionIssue(profile, in.Fset, in.Config); low != nil {
+				issues = append(issues, *low)
+			}
 		}
 	}
 	return issues
+}
+
+func filterSelectedIssues(issues []Issue, cfg Config) []Issue {
+	out := issues[:0]
+	for _, issue := range issues {
+		if checkEnabled(cfg, issue.Check) {
+			out = append(out, issue)
+		}
+	}
+	return out
 }
 
 func removeIssuesByCheck(issues []Issue, check CheckID) []Issue {

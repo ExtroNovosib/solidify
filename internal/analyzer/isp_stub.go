@@ -36,7 +36,6 @@ func checkISPStubImplementation(fset *token.FileSet, files []*ast.File, info *ty
 					),
 					Evidence: fmt.Sprintf("stub-implementation:method=%s;interface=%s;kind=%s", fn.Name.Name, ifaceName, kind),
 				})
-				issue.SuggestedFixes = []SuggestedFix{IgnoreSuppressionFix(issue, "accepted stub pending interface split")}
 				issues = append(issues, issue)
 			}
 		}

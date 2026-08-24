@@ -398,19 +398,19 @@ func TestRun_ColdWarmCacheEquivalencePrecisionCorpus(t *testing.T) {
 			}
 			warm := Run(pkgs, cfg, enabled)
 
+			disabledConfig := cfg
+			disabledConfig.CacheEnabled = false
+			pkgs, _, err = LoadWorkspace([]string{root}, false, "types")
+			if err != nil {
+				t.Fatal(err)
+			}
+			disabled := Run(pkgs, disabledConfig, enabled)
+
 			if issueSignatures(cold) != issueSignatures(warm) {
 				t.Fatalf("cold/warm mismatch\ncold=%v\nwarm=%v", cold, warm)
 			}
-			coldJSON, err := EncodeIssuesJSON(cold)
-			if err != nil {
-				t.Fatal(err)
-			}
-			warmJSON, err := EncodeIssuesJSON(warm)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(coldJSON) != string(warmJSON) {
-				t.Fatalf("cold/warm JSON mismatch\ncold=%s\nwarm=%s", coldJSON, warmJSON)
+			if issueSignatures(cold) != issueSignatures(disabled) {
+				t.Fatalf("cold/cache-disabled mismatch\ncold=%v\ndisabled=%v", cold, disabled)
 			}
 		})
 	}

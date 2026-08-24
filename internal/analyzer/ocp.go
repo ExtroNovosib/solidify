@@ -52,13 +52,30 @@ func CheckOCP(fset *token.FileSet, files []*ast.File, cfg Config) []Issue {
 
 // CheckOCPProgram runs all OCP checks over one consistent package universe.
 func CheckOCPProgram(pkgs []*packageFiles, cfg Config) []Issue {
-	analysis := collectOCPAnalysis(pkgs, cfg)
-	issues := emitOCPDispatch(analysis, cfg)
-	issues = append(issues, emitOCPDiscriminators(analysis, cfg)...)
-	issues = append(issues, emitOCPRuntime(analysis)...)
-	issues = append(issues, emitOCPConcreteParameters(pkgs, cfg)...)
-	factoryIssues, factorySitePositions := emitOCPFactories(pkgs, cfg)
-	if len(factorySitePositions) > 0 {
+	needsAnalysis := checkEnabled(cfg, CheckOCPTypeDispatch) || checkEnabled(cfg, CheckOCPDiscriminatorDispatch) || checkEnabled(cfg, CheckOCPRuntimeExhaustiveness) || checkEnabled(cfg, CheckOCPClosedFactory)
+	analysis := ocpAnalysis{flaggedDispatch: map[*ocpDispatchSite]bool{}, flaggedDisc: map[*ocpDiscriminatorSite]bool{}}
+	if needsAnalysis {
+		analysis = collectOCPAnalysis(pkgs, cfg)
+	}
+	var issues []Issue
+	if checkEnabled(cfg, CheckOCPTypeDispatch) {
+		issues = emitOCPDispatch(analysis, cfg)
+	}
+	if checkEnabled(cfg, CheckOCPDiscriminatorDispatch) {
+		issues = append(issues, emitOCPDiscriminators(analysis, cfg)...)
+	}
+	if checkEnabled(cfg, CheckOCPRuntimeExhaustiveness) {
+		issues = append(issues, emitOCPRuntime(analysis)...)
+	}
+	if checkEnabled(cfg, CheckOCPConcreteParameter) {
+		issues = append(issues, emitOCPConcreteParameters(pkgs, cfg)...)
+	}
+	var factoryIssues []Issue
+	var factorySitePositions map[string]bool
+	if checkEnabled(cfg, CheckOCPClosedFactory) || checkEnabled(cfg, CheckOCPTypeDispatch) {
+		factoryIssues, factorySitePositions = emitOCPFactories(pkgs, cfg)
+	}
+	if checkEnabled(cfg, CheckOCPTypeDispatch) && len(factorySitePositions) > 0 {
 		filtered := issues[:0]
 		for _, issue := range issues {
 			if issue.ID() == string(CheckOCPTypeDispatch) && factorySitePositions[positionKey(issue.Pos)] {
@@ -68,9 +85,15 @@ func CheckOCPProgram(pkgs []*packageFiles, cfg Config) []Issue {
 		}
 		issues = filtered
 	}
-	issues = append(issues, factoryIssues...)
-	issues = append(issues, emitOCPImplementationCoupling(pkgs, cfg)...)
-	issues = append(issues, emitOCPParallelImplementations(pkgs, cfg)...)
+	if checkEnabled(cfg, CheckOCPClosedFactory) {
+		issues = append(issues, factoryIssues...)
+	}
+	if checkEnabled(cfg, CheckOCPImplementationCoupling) {
+		issues = append(issues, emitOCPImplementationCoupling(pkgs, cfg)...)
+	}
+	if checkEnabled(cfg, CheckOCPParallelImplementations) {
+		issues = append(issues, emitOCPParallelImplementations(pkgs, cfg)...)
+	}
 	return issues
 }
 

@@ -56,10 +56,16 @@ described below intentionally exposes only package-scoped analyzers.
 
 ```sh
 go build -o solidlint ./cmd/solidlint
-./solidlint ./...
-./solidlint -profile=all -fail=false ./...
+./solidlint check ./...
+./solidlint ./... # legacy form; equivalent to "check"
+./solidlint check -profile=all -fail=false ./...
 ./solidlint -enable-checks=SOLID-S/complex-function ./...
 ./solidlint ./internal/analyzer/
+./solidlint checks list
+./solidlint checks explain SOLID-I/fat-interface
+./solidlint config init > .solidify.yml
+./solidlint config validate .solidify.yml
+./solidlint stats -format=json ./...
 ./solidlint -analysis=syntax -rules=S,I ./internal/...
 ./solidlint -tests -fail-level=error ./...
 ./solidlint -format=json ./... > findings.json
@@ -107,10 +113,10 @@ The latter is advisory because initialization outside the scanned workspace
 cannot be proven absent. Unsupported/no-op interface methods remain ISP
 findings, while type switches remain OCP findings.
 
-Type-level SRP metrics aggregate receivers across every file in a package.
-Pass package directories (for example `./internal/analyzer/`), not single
-definition files such as `run.go`. When every CLI path is a `.go` file,
-`solidlint` prints a stderr tip reminding you to scan the package directory.
+Type-level SRP metrics aggregate receivers across every file in a package. A
+`.go` target is therefore a package selector: `./solidlint internal/cli/run.go`
+analyzes the complete `internal/cli` package. Directory targets retain their
+recursive behavior.
 
 ## Output
 
@@ -128,16 +134,21 @@ packages, prefer `-rules S,I` and `-fail=false`; use baselines before turning
 
 ### Canonical validation gate
 
-Local development uses one reliability entry point:
+Local development has explicit short, full, and release tiers:
 
 ```sh
+make check-fast
 make check
+SOLIDLINT_VERSION=v0.2.0 make check-release
 ```
 
-`make check` runs formatting, `go vet`, unit and race tests, analyzer coverage
-floor, `golangci-lint`, self-enforcement, smoke and precision corpora, plugin
-build, SARIF schema regression tests, JSON schema validation, version injection
-checks, and `govulncheck`. Use it before pushing.
+`make check-fast` runs formatting, `go vet`, unit tests, integration tests, and
+self-lint for the edit loop. `make check` adds subprocess E2E, race, coverage,
+smoke, precision, cache parity, SARIF/schema, module/shared plugin, version, and
+vulnerability gates, with each target owned once. Use it before pushing.
+`make check-release` additionally builds the release snapshot and validates the
+published module version from a clean external consumer; it requires
+`SOLIDLINT_VERSION` and release tooling.
 
 Keep report-only scans separate from enforcement. In this repository,
 `make report` and `make enforce` scan `./internal/analyzer/...` so the tool
@@ -221,27 +232,43 @@ such as unclosed `[` are rejected at configuration load by
 Excluded files are removed before metrics and related-location construction, so
 they do not affect SRP aggregates or related locations on included findings.
 
-Accepted DIP debt and other intentional findings can be baselined:
+Accepted DIP debt and other intentional findings can be baselined with review
+metadata:
 
 ```sh
-solidlint -write-baseline .solidlint-baseline.json ./...
+solidlint baseline init \
+  -baseline .solidlint-baseline.json \
+  -baseline-reason "Reviewed migration debt" \
+  -baseline-owner platform-team \
+  -baseline-expires 2026-12-31 \
+  ./...
 git add .solidlint-baseline.json
 solidlint -baseline .solidlint-baseline.json ./...
+solidlint baseline diff -baseline .solidlint-baseline.json ./...
+solidlint baseline update -baseline .solidlint-baseline.json \
+  -baseline-reason "Reviewed new migration debt" ./...
+solidlint baseline prune -baseline .solidlint-baseline.json ./...
 ```
 
-`-write-baseline` records v4 portable fingerprints for current findings (after
-`exclude` patterns) using an atomic replacement. `-baseline` filters accepted fingerprints;
-stale fingerprints that no longer match any finding are reported on stderr
-without failing the run by default. Older baseline versions are rejected with
-an explicit regeneration error. Version 4 identities remain portable across
-checkout locations. Use `-baseline-stale=error` when stale entries should fail
-the run, or `-baseline-stale=ignore` to suppress the notice.
+Baseline document v5 stores each fingerprint together with its check ID,
+portable path, subject, required reason, optional owner, and optional expiry.
+The reader accepts v4 documents; an explicit `baseline update` migrates them to
+v5 and requires a reason for newly accepted findings. Update preserves live
+annotations and does not remove stale entries unless `-prune` is supplied;
+`baseline prune` is the explicit stale-debt cleanup workflow. The deprecated
+`-write-baseline` compatibility flag remains available but now also requires
+`-baseline-reason`. `-baseline` filters accepted findings as before. Use
+`-baseline-stale=error` when stale entries should fail a check, or
+`-baseline-stale=ignore` to suppress the notice.
 
-The default package cache is stored in the platform user cache, namespaced by
-the analysis root. Use `-cache-dir` to relocate it or `-cache=false` to disable
-it. `-cache-debug` prints cache diagnostics to stderr. `-print-config` prints
-the resolved, machine-readable configuration without loading or analyzing
-packages.
+The default package and program-group cache is stored in the platform user
+cache, namespaced by the analysis root. Use `-cache-dir` to relocate it or
+`-cache=false` to disable it. `-cache-debug` prints cache diagnostics to stderr.
+`solidlint stats -format=json` returns structural execution evidence—selected,
+executed, skipped, cache-hit, and cache-miss runner groups—without requiring
+timing-log parsing. `-print-config` prints resolved machine-readable policy
+without loading or analyzing packages; `config schema` emits the strict config
+schema.
 
 Architecture package lists are intentionally opt-in. Composition roots are
 excluded from implementation-coupling and DIP layer/wiring/leak findings
@@ -254,8 +281,9 @@ gate before enabling a rule by default.
 
 ### Troubleshooting
 
-- **Stale baseline notices:** regenerate with `-write-baseline` or use
-  `-baseline-stale=ignore` / `-baseline-stale=error` as needed.
+- **Stale baseline notices:** inspect with `baseline diff`, remove with the
+  explicit `baseline prune` command, or use `-baseline-stale=ignore` /
+  `-baseline-stale=error` as needed.
 - **Configuration errors:** strict YAML rejects unknown fields, thresholds,
   disabled checks, and severity targets before analysis starts.
 - **Cache surprises:** disable with `-cache=false` or relocate with
@@ -270,9 +298,8 @@ gate before enabling a rule by default.
 
 Type-level SRP metrics (`large-type`, `god-type`, cohesion,
 `mixed-import-clusters`) aggregate every `.go` file in the same directory and
-package name. Scanning a single definition file under-reports method counts
-when receivers are spread across sibling files. Pass a package directory (for
-example `./internal/analyzer/`) rather than one file such as `run.go`.
+package name. A single `.go` argument selects and analyzes its containing
+package, so receiver methods in sibling files remain part of the result.
 
 DIP field and constructor findings are suppressed in packages matching
 `architecture.composition_roots`. Field findings are also suppressed on
@@ -405,6 +432,5 @@ locations. In syntax mode, only local AST signals such as large type switches
 are available; repeated interface, discriminator, factory, and concrete-
 parameter checks require a complete package type graph.
 
-Baseline v4 is the only accepted runtime format. Regenerate older baselines
-after reviewing the new stable subjects and identities. Legacy YAML and rule-ID
-aliases are intentionally rejected in this pre-release contract transition.
+Baseline v5 is the canonical write format, while v4 remains readable for an
+explicit annotated migration. Legacy YAML and rule-ID aliases remain rejected.

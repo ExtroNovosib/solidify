@@ -27,7 +27,7 @@ func TestAnalyzerReportBaselineFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(t.TempDir(), "baseline.json")
-	if err := baseline.Write(path, issues); err != nil {
+	if err := baseline.Write(path, issues, "reviewed integration fixture debt"); err != nil {
 		t.Fatal(err)
 	}
 	accepted, err := baseline.Read(path)

@@ -1,0 +1,117 @@
+{
+  "revision": "stable-v0.2-r1",
+  "cases": [
+    {
+      "key": "stable-large-type",
+      "checkId": "SOLID-S/large-type",
+      "positive": {
+        "root": "testdata/evaluation/positive",
+        "path": "testdata/evaluation/positive/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/positive.LargeService"
+      },
+      "negative": {
+        "root": "testdata/evaluation/negative",
+        "path": "testdata/evaluation/negative/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/negative.BoundaryService"
+      },
+      "rationale": "Eleven heterogeneous fields and exported methods plus aggregate complexity cross four independent large-type signals; the boundary stays at the configured maxima.",
+      "documentation": "docs/checks/SOLID-S/large-type.md"
+    },
+    {
+      "key": "stable-data-clump",
+      "checkId": "SOLID-S/data-clump",
+      "positive": {
+        "root": "testdata/evaluation/positive",
+        "path": "testdata/evaluation/positive/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/positive.UpdateContact"
+      },
+      "negative": {
+        "root": "testdata/evaluation/negative",
+        "path": "testdata/evaluation/negative/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/negative.UpdateContact"
+      },
+      "rationale": "Two functions repeat nine contact parameters; the negative pair remains below the configured parameter threshold.",
+      "documentation": "docs/checks/SOLID-S/data-clump.md"
+    },
+    {
+      "key": "stable-type-dispatch",
+      "checkId": "SOLID-O/type-dispatch",
+      "positive": {
+        "root": "testdata/evaluation/positive",
+        "path": "testdata/evaluation/positive/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/positive.any"
+      },
+      "negative": {
+        "root": "testdata/evaluation/negative",
+        "path": "testdata/evaluation/negative/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/negative.any"
+      },
+      "rationale": "Five concrete variants exceed the default four-case maximum; four variants are the clean boundary.",
+      "documentation": "docs/checks/SOLID-O/type-dispatch.md"
+    },
+    {
+      "key": "stable-fat-interface",
+      "checkId": "SOLID-I/fat-interface",
+      "positive": {
+        "root": "testdata/evaluation/positive",
+        "path": "testdata/evaluation/positive/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/positive.WidePort"
+      },
+      "negative": {
+        "root": "testdata/evaluation/negative",
+        "path": "testdata/evaluation/negative/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/negative.BoundedPort"
+      },
+      "rationale": "WidePort declares nine methods while BoundedPort declares the accepted maximum of eight.",
+      "documentation": "docs/checks/SOLID-I/fat-interface.md"
+    },
+    {
+      "key": "stable-usage-ratio",
+      "checkId": "SOLID-I/usage-ratio",
+      "positive": {
+        "root": "testdata/evaluation/positive",
+        "path": "testdata/evaluation/positive/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/positive.UseRepository"
+      },
+      "negative": {
+        "root": "testdata/evaluation/negative",
+        "path": "testdata/evaluation/negative/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/negative.UseRepository"
+      },
+      "rationale": "The positive consumer uses one of three methods; the negative consumer exercises the full interface contract.",
+      "documentation": "docs/checks/SOLID-I/usage-ratio.md"
+    },
+    {
+      "key": "stable-stub-implementation",
+      "checkId": "SOLID-I/stub-implementation",
+      "positive": {
+        "root": "testdata/evaluation/positive",
+        "path": "testdata/evaluation/positive/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/positive.Save"
+      },
+      "negative": {
+        "root": "testdata/evaluation/negative",
+        "path": "testdata/evaluation/negative/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/negative.Save"
+      },
+      "rationale": "The positive implementation returns errors.ErrUnsupported for an interface method; the negative implementation gives all methods meaningful bodies.",
+      "documentation": "docs/checks/SOLID-I/stub-implementation.md"
+    },
+    {
+      "key": "stable-concrete-dependency",
+      "checkId": "SOLID-D/concrete-dependency",
+      "positive": {
+        "root": "testdata/violations",
+        "path": "additional.go",
+        "subject": "tempmod.NewArchiveService"
+      },
+      "negative": {
+        "root": "testdata/evaluation/negative",
+        "path": "testdata/evaluation/negative/stable.go",
+        "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/negative.LocalService"
+      },
+      "rationale": "A constructor accepts a behavioral concrete type from another package; the negative dependency is same-package and intentionally ignored.",
+      "documentation": "docs/checks/SOLID-D/concrete-dependency.md"
+    }
+  ]
+}

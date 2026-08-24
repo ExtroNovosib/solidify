@@ -104,36 +104,22 @@ func configSearchStart(target string) string {
 }
 
 func validThreshold(key string) bool {
-	switch key {
-	case "max_methods", "max_func_lines", "max_params", "max_switch_cases", "max_interface_methods",
-		"isp_min_methods", thresholdISPUsage, "max_fields", "max_type_lines", "max_exported_methods",
-		"max_func_complexity", "max_type_complexity", "max_fanout", "max_atfd",
-		"min_large_type_signals", thresholdMinTCC, "min_cohesion_methods", "min_cohesion_fields",
-		"min_component_methods", "min_import_cluster_methods", "ocp_min_dispatch_sites",
-		"ocp_min_shared_variants", thresholdOCPOverlap, "ocp_min_concrete_parameter_methods",
-		"ocp_min_implementation_imports", "ocp_min_parallel_functions", "ocp_min_parallel_nodes",
-		thresholdOCPSimilarity, "dip_composition_root_fields":
-		return true
-	}
-	return false
+	_, ok := thresholdSpec(key)
+	return ok
 }
 
 func validateThresholdValue(key string, value int) error {
-	if value < 0 {
-		return fmt.Errorf("threshold %q must be non-negative", key)
+	spec, ok := thresholdSpec(key)
+	if !ok {
+		return fmt.Errorf("unknown threshold %q", key)
 	}
-	switch key {
-	case thresholdISPUsage, thresholdMinTCC, thresholdOCPOverlap, thresholdOCPSimilarity:
-		if value > 100 {
-			return fmt.Errorf("threshold %q must be between 0 and 100", key)
-		}
-		return nil
-	default:
-		if value < 1 {
-			return fmt.Errorf("threshold %q must be at least 1", key)
-		}
-		return nil
+	if spec.Maximum != nil && (value < spec.Minimum || value > *spec.Maximum) {
+		return fmt.Errorf("threshold %q must be between %d and %d", key, spec.Minimum, *spec.Maximum)
 	}
+	if value < spec.Minimum {
+		return fmt.Errorf("threshold %q must be at least %d", key, spec.Minimum)
+	}
+	return nil
 }
 
 func validRuleCode(value string) bool {
@@ -149,36 +135,9 @@ func validRuleCode(value string) bool {
 // Keeping this separate from parsing ensures a negative or impossible CLI
 // threshold cannot bypass the stricter file configuration path.
 func ValidateConfig(cfg Config) error {
-	values := map[string]int{
-		"max_methods": cfg.MaxMethodsPerType, "max_func_lines": cfg.MaxFuncLines,
-		"max_params": cfg.MaxFuncParams, "max_fields": cfg.MaxFieldsPerType,
-		"max_type_lines": cfg.MaxTypeLines, "max_exported_methods": cfg.MaxExportedMethods,
-		"max_func_complexity": cfg.MaxFuncComplexity, "max_type_complexity": cfg.MaxTypeComplexity,
-		"max_fanout": cfg.MaxFanOut, "max_atfd": cfg.MaxATFD,
-		"min_large_type_signals": cfg.MinLargeTypeSignals, "min_cohesion_methods": cfg.MinCohesionMethods,
-		"min_cohesion_fields": cfg.MinCohesionFields, "min_component_methods": cfg.MinComponentMethods,
-		"min_import_cluster_methods": cfg.MinImportClusterMethods, "max_switch_cases": cfg.MaxTypeSwitchCases,
-		"ocp_min_dispatch_sites": cfg.OCPMinDispatchSites, "ocp_min_shared_variants": cfg.OCPMinSharedVariants,
-		"ocp_min_concrete_parameter_methods": cfg.OCPMinConcreteParameterMethods,
-		"ocp_min_implementation_imports":     cfg.OCPMinImplementationImports,
-		"ocp_min_parallel_functions":         cfg.OCPMinParallelFunctions, "ocp_min_parallel_nodes": cfg.OCPMinParallelNodes,
-		"max_interface_methods": cfg.MaxInterfaceMethods, "isp_min_methods": cfg.ISPMinMethods,
-		"dip_composition_root_fields": cfg.DIPCompositionRootFields,
-	}
-	for key, value := range values {
-		if value < 1 {
-			return fmt.Errorf("threshold %q must be at least 1", key)
-		}
-	}
-	percentages := map[string]int{
-		thresholdISPUsage:      cfg.ISPUsageRatioPercent,
-		thresholdMinTCC:        cfg.MinTCCPercent,
-		thresholdOCPOverlap:    cfg.OCPDispatchOverlapPercent,
-		thresholdOCPSimilarity: cfg.OCPParallelSimilarityPercent,
-	}
-	for key, value := range percentages {
-		if value < 0 || value > 100 {
-			return fmt.Errorf("threshold %q must be between 0 and 100", key)
+	for _, spec := range thresholdRegistry {
+		if err := validateThresholdValue(spec.Name, spec.get(cfg)); err != nil {
+			return err
 		}
 	}
 	if cfg.AnalysisMode != "" && cfg.AnalysisMode != analysisModeAuto && cfg.AnalysisMode != syntaxAnalysisMode && cfg.AnalysisMode != "types" {
@@ -228,65 +187,8 @@ func ApplyThresholds(cfg *Config, thresholds map[string]int) error {
 }
 
 func applyThresholdValue(cfg *Config, key string, value int) {
-	switch key {
-	case "max_methods":
-		cfg.MaxMethodsPerType = value
-	case "max_func_lines":
-		cfg.MaxFuncLines = value
-	case "max_params":
-		cfg.MaxFuncParams = value
-	case "max_switch_cases":
-		cfg.MaxTypeSwitchCases = value
-	case "max_interface_methods":
-		cfg.MaxInterfaceMethods = value
-	case "isp_min_methods":
-		cfg.ISPMinMethods = value
-	case thresholdISPUsage:
-		cfg.ISPUsageRatioPercent = value
-	case "max_fields":
-		cfg.MaxFieldsPerType = value
-	case "max_type_lines":
-		cfg.MaxTypeLines = value
-	case "max_exported_methods":
-		cfg.MaxExportedMethods = value
-	case "max_func_complexity":
-		cfg.MaxFuncComplexity = value
-	case "max_type_complexity":
-		cfg.MaxTypeComplexity = value
-	case "max_fanout":
-		cfg.MaxFanOut = value
-	case "max_atfd":
-		cfg.MaxATFD = value
-	case "min_large_type_signals":
-		cfg.MinLargeTypeSignals = value
-	case thresholdMinTCC:
-		cfg.MinTCCPercent = value
-	case "min_cohesion_methods":
-		cfg.MinCohesionMethods = value
-	case "min_cohesion_fields":
-		cfg.MinCohesionFields = value
-	case "min_component_methods":
-		cfg.MinComponentMethods = value
-	case "min_import_cluster_methods":
-		cfg.MinImportClusterMethods = value
-	case "dip_composition_root_fields":
-		cfg.DIPCompositionRootFields = value
-	case "ocp_min_dispatch_sites":
-		cfg.OCPMinDispatchSites = value
-	case "ocp_min_shared_variants":
-		cfg.OCPMinSharedVariants = value
-	case thresholdOCPOverlap:
-		cfg.OCPDispatchOverlapPercent = value
-	case "ocp_min_concrete_parameter_methods":
-		cfg.OCPMinConcreteParameterMethods = value
-	case "ocp_min_implementation_imports":
-		cfg.OCPMinImplementationImports = value
-	case "ocp_min_parallel_functions":
-		cfg.OCPMinParallelFunctions = value
-	case "ocp_min_parallel_nodes":
-		cfg.OCPMinParallelNodes = value
-	case thresholdOCPSimilarity:
-		cfg.OCPParallelSimilarityPercent = value
+	if spec, ok := thresholdSpec(key); ok {
+		spec.set(cfg, value)
 	}
 }
 

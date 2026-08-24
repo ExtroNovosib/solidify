@@ -1,32 +1,38 @@
 # SOLID-D/concrete-dependency
 
-Heuristic check for **concrete dependency** smells in Go code.
-
-Struct fields and `New*` constructors share the same suppressions: configured
-composition-root packages, same-package concrete types, `*Config` data bags,
-and behaviorless structs from domain packages are ignored. Cross-package
-concrete behavior dependencies still flag. Vendor or intentional concrete
-types (for example `*websocket.Conn`) can be allowlisted via
-`dip.allow_dependencies` or baselined.
-
-Example: scan the package directory and review the reported evidence before suppressing with `//solidify:ignore SOLID-D/concrete-dependency reason`.
+Reports high-level constructors or fields coupled to behavioral concrete types from another package.
 
 ## Product contract
 
-- Maturity: **stable**. Experimental checks require `profile: all`, `-profile=all`, or explicit `enabled_checks`.
-- Analysis modes: conservative syntax fallback; complete types are used when available.
-- Surfaces: standalone CLI, module plugin, and matched-ABI Go plugin.
-- Evidence names the matched source construct; metrics record measured values, configured thresholds, and comparators. Fingerprints use the check ID, portable path, subject, and identity, never the message or measured counts.
+Maturity: **stable**
+
+Analysis modes: conservative syntax fallback; full type information is used when available.
+
+Surfaces: standalone CLI and both GolangCI plugin modes.
 
 ## Examples
 
+Positive: [stable positive evaluation fixture](../../../testdata/evaluation/positive/stable.go).
+
+Clean: [stable negative evaluation fixture](../../../testdata/evaluation/negative/stable.go).
+
+Evaluation case `stable-concrete-dependency` uses the cross-package client in [the violations fixture](../../../testdata/violations/additional.go). The [negative fixture](../../../testdata/evaluation/negative/stable.go) shows a same-package concrete collaborator, which is intentionally ignored.
+
 ```go
-// Positive: the focused positive fixture for SOLID-D/concrete-dependency crosses the documented signal.
-// Clean: its boundary and clean counterexamples remain at or below the signal.
+package service
+
+import "tempmod/database"
+type ArchiveService struct{}
+func NewArchiveService(client *database.PostgreSQLClient) *ArchiveService {
+	_ = client
+	return &ArchiveService{}
+}
 ```
 
-The analyzer corpus contains the executable positive, boundary, and clean examples. Run `go test ./internal/analyzer -count=1` and `make precision` after changing detection behavior.
+## Evidence and configuration
+
+Evidence records the constructor or field and fully qualified concrete dependency. Same-package types, behaviorless domain data, `*Config` bags, composition roots, and entries in `dip.allow_dependencies` are excluded. Types improve classification; conservative syntax fallback remains available.
 
 ## Limitations and remediation
 
-This is an explainable heuristic, not proof of a design defect. Review generated code, DTOs, composition roots, adapters, thin wrappers, and framework contracts before refactoring. Prefer a behavior-preserving extraction or narrower consumer-owned abstraction. The only automatic fix is a reason-bearing `//solidify:ignore SOLID-D/concrete-dependency ...` triage comment; baselines v4 accept reviewed debt without changing source. Configure canonical snake_case thresholds where the check exposes them, and use exact IDs in `disabled_checks`, severity overrides, suppressions, and baselines.
+Concrete dependencies are appropriate in composition roots, adapters, and stable vendor contracts. Introduce a consumer-owned behavioral interface only when substitution or test seams are real requirements. There is no universal safe rewrite. Use a justified suppression or annotated baseline v5 entry for reviewed exceptions. See the [stable v0.2 evaluation](../../evaluations/stable-v0.2.md).

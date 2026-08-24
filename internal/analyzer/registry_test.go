@@ -185,3 +185,23 @@ func TestCheckRegistryRejectsOrphanDocumentation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCheckDocsReflectBaselineAndFixContracts(t *testing.T) {
+	for _, check := range checkRegistry {
+		docPath := filepath.Join("..", "..", "docs", "checks", filepath.FromSlash(string(check.ID))+".md")
+		document, err := os.ReadFile(docPath)
+		if err != nil {
+			t.Errorf("%s documentation: %v", check.ID, err)
+			continue
+		}
+		text := strings.ToLower(string(document))
+		if !strings.Contains(text, "baseline v5") {
+			t.Errorf("%s documentation does not describe baseline v5", check.ID)
+		}
+		for _, staleClaim := range []string{"the only automatic fix", "automatic suppression fix", "baselines v4 accept"} {
+			if strings.Contains(text, staleClaim) {
+				t.Errorf("%s documentation retains stale fix/baseline claim %q", check.ID, staleClaim)
+			}
+		}
+	}
+}

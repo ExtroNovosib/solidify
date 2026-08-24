@@ -1,25 +1,38 @@
 # SOLID-O/type-dispatch
 
-Heuristic check for **type dispatch** smells in Go code.
-
-Example: scan the package directory and review the reported evidence before suppressing with `//solidify:ignore SOLID-O/type-dispatch reason`.
+Reports concrete type dispatch that must be edited whenever a new variant is added.
 
 ## Product contract
 
-- Maturity: **stable**. Experimental checks require `profile: all`, `-profile=all`, or explicit `enabled_checks`.
-- Analysis modes: conservative syntax fallback; complete types are used when available.
-- Surfaces: standalone CLI only because the check performs program correlation.
-- Evidence names the matched source construct; metrics record measured values, configured thresholds, and comparators. Fingerprints use the check ID, portable path, subject, and identity, never the message or measured counts.
+Maturity: **stable**
+
+Analysis modes: conservative syntax fallback; full type information is used when available.
+
+Surfaces: standalone CLI only; this is a program-scoped check.
 
 ## Examples
 
+Positive: [stable positive evaluation fixture](../../../testdata/evaluation/positive/stable.go).
+
+Clean: [stable negative evaluation fixture](../../../testdata/evaluation/negative/stable.go).
+
+Evaluation case `stable-type-dispatch` uses five variants in the [positive fixture](../../../testdata/evaluation/positive/stable.go), while the [negative fixture](../../../testdata/evaluation/negative/stable.go) demonstrates the four-case boundary.
+
 ```go
-// Positive: the focused positive fixture for SOLID-O/type-dispatch crosses the documented signal.
-// Clean: its boundary and clean counterexamples remain at or below the signal.
+package example
+
+type A struct{}; type B struct{}; type C struct{}; type D struct{}; type E struct{}
+func Dispatch(value any) {
+	switch value.(type) {
+	case A, B, C, D, E:
+	}
+}
 ```
 
-The analyzer corpus contains the executable positive, boundary, and clean examples. Run `go test ./internal/analyzer -count=1` and `make precision` after changing detection behavior.
+## Evidence and configuration
+
+Evidence records the dispatch source, correlated sites, shared variants, full variant set, and maximum cases. `max_switch_cases`, `ocp_min_dispatch_sites`, `ocp_min_shared_variants`, and `ocp_dispatch_overlap_percent` control the decision. This program-scoped check runs in the standalone CLI, not package plugins.
 
 ## Limitations and remediation
 
-This is an explainable heuristic, not proof of a design defect. Review generated code, DTOs, composition roots, adapters, thin wrappers, and framework contracts before refactoring. Prefer a behavior-preserving extraction or narrower consumer-owned abstraction. The only automatic fix is a reason-bearing `//solidify:ignore SOLID-O/type-dispatch ...` triage comment; baselines v4 accept reviewed debt without changing source. Configure canonical snake_case thresholds where the check exposes them, and use exact IDs in `disabled_checks`, severity overrides, suppressions, and baselines.
+Closed protocol decoders, exhaustive boundary adapters, and compatibility shims may deliberately enumerate variants. Prefer behavior on an interface only when variants own the behavior and extension is expected. No generic suppression is advertised as a safe fix; use reviewed suppression or annotated baseline v5 debt when the closed set is intentional. See the [stable v0.2 evaluation](../../evaluations/stable-v0.2.md).

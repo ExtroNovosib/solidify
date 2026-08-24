@@ -92,20 +92,28 @@ func parsePackageFiles(dir string, paths []string, withTypes bool) (*packageFile
 // Run executes every registered check against loaded packages and returns all
 // issues, sorted by file/line for stable, readable output.
 func Run(pkgs []*packageFiles, cfg Config, enabled map[Rule]bool) []Issue {
+	plan, err := NewExecutionPlan(cfg, enabled, SurfaceCLI)
+	if err != nil {
+		return nil
+	}
+	issues, _ := RunPlan(pkgs, cfg, plan)
+	return issues
+}
+
+// RunPlan executes a pre-resolved plan and returns deterministic structural
+// statistics describing which runner groups actually performed work.
+func RunPlan(pkgs []*packageFiles, cfg Config, plan ExecutionPlan) ([]Issue, ExecutionStats) {
 	pkgs = prepareRunPackages(pkgs, cfg)
-	cache := initRunCache(pkgs, cfg, enabled)
-	all := runPackageScopedChecks(pkgs, cfg, enabled, cache)
-	all = append(all, runProgramScopedChecks(pkgs, cfg, enabled)...)
+	cfg.selectedChecks = plan.selectionCopy()
+	cache := initRunCache(pkgs, cfg, plan)
+	stats := newRunStats(plan)
+	all := runPackageScopedChecks(pkgs, cfg, plan, cache, stats)
+	all = append(all, runProgramScopedChecks(pkgs, cfg, plan, cache, stats)...)
 	reportRunDiagnostics(cfg, cache, pkgs)
 	stampAnalysisRoots(all, pkgs)
-	all = filterDisabledChecks(all, cfg.DisabledChecks)
-	if selection, err := ResolveCheckSelection(cfg.Profile, enabled, cfg.EnabledChecks, cfg.DisabledChecks); err == nil {
-		all = filterSelectedChecks(all, selection)
-	}
 	all = filterModeUnsupported(all, pkgs, cfg.AnalysisMode)
 	sortIssues(all)
 	all = applySuppressions(all, pkgs)
-	AttachDefaultSuppressions(all)
 	for index := range all {
 		packagePath := "workspace"
 		for _, pkg := range pkgs {
@@ -119,7 +127,7 @@ func Run(pkgs []*packageFiles, cfg Config, enabled map[Rule]bool) []Issue {
 		}
 	}
 	_ = FinalizeIssues(all, "workspace")
-	return all
+	return all, stats.snapshot()
 }
 
 func issueBelongsToPackage(issue Issue, pkg *packageFiles) bool {
@@ -130,16 +138,6 @@ func issueBelongsToPackage(issue Issue, pkg *packageFiles) bool {
 		}
 	}
 	return false
-}
-
-func filterSelectedChecks(issues []Issue, selection map[CheckID]bool) []Issue {
-	out := issues[:0]
-	for _, issue := range issues {
-		if selection[issue.Check] {
-			out = append(out, issue)
-		}
-	}
-	return out
 }
 
 func filterModeUnsupported(issues []Issue, pkgs []*packageFiles, mode string) []Issue {
@@ -179,32 +177,37 @@ func prepareRunPackages(pkgs []*packageFiles, cfg Config) []*packageFiles {
 	return ApplyWorkspaceFilePolicy(pkgs, cfg.ExcludedFiles)
 }
 
-func initRunCache(pkgs []*packageFiles, cfg Config, enabled map[Rule]bool) *packageCache {
+func initRunCache(pkgs []*packageFiles, cfg Config, plan ExecutionPlan) *packageCache {
 	if !cfg.CacheEnabled {
 		return nil
 	}
-	return newPackageCache(cacheRootDir(pkgs, cfg), cfg, enabled)
+	return newPackageCache(cacheRootDir(pkgs, cfg), cfg, plan)
 }
 
 type packageJob struct {
 	pkg   *packageFiles
+	group ExecutionGroup
 	check Check
 }
 
-func runPackageScopedChecks(pkgs []*packageFiles, cfg Config, enabled map[Rule]bool, cache packageCheckCache) []Issue {
+func runPackageScopedChecks(pkgs []*packageFiles, cfg Config, plan ExecutionPlan, cache *packageCache, stats *runStats) []Issue {
 	jobs := make([]packageJob, 0)
-	for _, check := range checkRegistry {
-		if !registryEnabled(check, enabled) || check.Scope != ScopePackage || check.RunPackage == nil {
+	for _, group := range plan.groups {
+		if group.Scope != ScopePackage {
+			continue
+		}
+		check, ok := runnerForGroup(group)
+		if !ok {
 			continue
 		}
 		for _, pkg := range pkgs {
-			jobs = append(jobs, packageJob{pkg: pkg, check: check})
+			jobs = append(jobs, packageJob{pkg: pkg, group: group, check: check})
 		}
 	}
-	return executePackageJobs(jobs, cfg, cache)
+	return executePackageJobs(jobs, cfg, cache, stats)
 }
 
-func executePackageJobs(jobs []packageJob, cfg Config, cache packageCheckCache) []Issue {
+func executePackageJobs(jobs []packageJob, cfg Config, cache *packageCache, stats *runStats) []Issue {
 	if len(jobs) == 0 {
 		return nil
 	}
@@ -225,11 +228,15 @@ func executePackageJobs(jobs []packageJob, cfg Config, cache packageCheckCache) 
 		go func() {
 			for job := range jobCh {
 				var local []Issue
-				if cached, ok := cache.load(job.pkg, job.check.ID); ok {
+				cacheID := groupCacheID(job.group)
+				if cached, ok := cache.load(job.pkg, cacheID); ok {
 					local = cached
+					stats.execution(job.group.Name, true, cache != nil)
 				} else {
 					local = job.check.RunPackage(job.pkg, cfg)
-					cache.store(job.pkg, job.check.ID, local)
+					local = filterGroupIssues(local, job.group)
+					cache.store(job.pkg, cacheID, local)
+					stats.execution(job.group.Name, false, cache != nil)
 				}
 				for index := range local {
 					local[index].analysisRoot = job.pkg.analysisRoot
@@ -258,13 +265,23 @@ func executePackageJobs(jobs []packageJob, cfg Config, cache packageCheckCache) 
 	return all
 }
 
-func runProgramScopedChecks(pkgs []*packageFiles, cfg Config, enabled map[Rule]bool) []Issue {
+func runProgramScopedChecks(pkgs []*packageFiles, cfg Config, plan ExecutionPlan, cache *packageCache, stats *runStats) []Issue {
 	var all []Issue
-	for _, check := range checkRegistry {
-		if !registryEnabled(check, enabled) || check.Scope != ScopeProgram || check.RunProgram == nil {
+	for _, group := range plan.groups {
+		if group.Scope != ScopeProgram {
 			continue
 		}
-		all = append(all, check.RunProgram(pkgs, cfg)...)
+		check, ok := runnerForGroup(group)
+		if !ok {
+			continue
+		}
+		issues, hit := cache.loadProgram(pkgs, group)
+		if !hit {
+			issues = filterGroupIssues(check.RunProgram(pkgs, cfg), group)
+			cache.storeProgram(pkgs, group, issues)
+		}
+		all = append(all, issues...)
+		stats.execution(group.Name, hit, cache != nil)
 	}
 	return all
 }
@@ -320,24 +337,6 @@ func sortIssues(all []Issue) {
 		}
 		return all[i].Evidence < all[j].Evidence
 	})
-}
-
-func filterDisabledChecks(issues []Issue, disabled []CheckID) []Issue {
-	if len(disabled) == 0 {
-		return issues
-	}
-	set := make(map[string]bool, len(disabled))
-	for _, id := range disabled {
-		set[string(id)] = true
-	}
-	out := issues[:0]
-	for _, issue := range issues {
-		if set[issue.ID()] || set[string(issue.Rule)] {
-			continue
-		}
-		out = append(out, issue)
-	}
-	return out
 }
 
 // applySuppressions accepts `//solidify:ignore RULE-ID justification` on the

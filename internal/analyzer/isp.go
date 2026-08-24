@@ -21,9 +21,16 @@ func CheckISP(fset *token.FileSet, files []*ast.File, cfg Config) []Issue {
 // information is available and retains a local-AST fallback otherwise.
 func CheckISPWithTypes(fset *token.FileSet, files []*ast.File, info *types.Info, cfg Config, pkg *packageFiles) []Issue {
 	interfaces := localInterfaces(files)
-	issues := checkISPFatInterfaces(fset, files, info, cfg, pkg, interfaces)
-	issues = append(issues, checkISPUsageRatio(fset, files, info, cfg, pkg)...)
-	issues = append(issues, checkISPStubImplementation(fset, files, info, cfg, pkg)...)
+	var issues []Issue
+	if checkEnabled(cfg, CheckISPFatInterface) {
+		issues = checkISPFatInterfaces(fset, files, info, cfg, pkg, interfaces)
+	}
+	if checkEnabled(cfg, CheckISPUsageRatio) {
+		issues = append(issues, checkISPUsageRatio(fset, files, info, cfg, pkg)...)
+	}
+	if checkEnabled(cfg, CheckISPStubImplementation) {
+		issues = append(issues, checkISPStubImplementation(fset, files, info, cfg, pkg)...)
+	}
 	return issues
 }
 

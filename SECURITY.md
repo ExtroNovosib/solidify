@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Until v0.1.0 is published, only the current default branch receives security fixes. After release, the latest v0.x release is supported.
+The latest published v0.x release and the current default branch receive security fixes. Older v0.x releases should upgrade to the latest patch before reporting version-specific behavior.
 
 ## Reporting a vulnerability
 

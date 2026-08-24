@@ -37,6 +37,7 @@ func checkSRPSyntax(fset *token.FileSet, files []*ast.File, cfg Config, pkg *pac
 	methodExample := map[string]token.Pos{} // first method position, for reporting
 	methodExampleEnd := map[string]token.Pos{}
 	var parameterProfiles []*functionParameterProfile
+	parameterChecks := checkEnabled(cfg, CheckSRPFlagArgument) || checkEnabled(cfg, CheckSRPMixedInputSurface) || checkEnabled(cfg, CheckSRPDataClump)
 
 	for _, f := range files {
 		if skipGenerated(pkg, f) {
@@ -47,15 +48,19 @@ func checkSRPSyntax(fset *token.FileSet, files []*ast.File, cfg Config, pkg *pac
 			if !ok {
 				continue
 			}
-			if issue, found := functionLengthIssue(fset, fn, cfg); found {
-				issues = append(issues, issue)
+			if checkEnabled(cfg, CheckSRPComplexFunction) {
+				if issue, found := functionLengthIssue(fset, fn, cfg); found {
+					issues = append(issues, issue)
+				}
 			}
-			profile, issue, found := parameterResponsibilityIssue(fset, fn, cfg)
-			parameterProfiles = append(parameterProfiles, profile)
-			if found {
-				issues = append(issues, issue)
+			if parameterChecks {
+				profile, issue, found := parameterResponsibilityIssue(fset, fn, cfg)
+				parameterProfiles = append(parameterProfiles, profile)
+				if found {
+					issues = append(issues, issue)
+				}
 			}
-			if fn.Recv != nil && len(fn.Recv.List) > 0 {
+			if checkEnabled(cfg, CheckSRPLargeType) && fn.Recv != nil && len(fn.Recv.List) > 0 {
 				typeName := receiverTypeName(fn.Recv.List[0].Type)
 				if typeName != "" {
 					methodCount[typeName]++
@@ -67,8 +72,12 @@ func checkSRPSyntax(fset *token.FileSet, files []*ast.File, cfg Config, pkg *pac
 			}
 		}
 	}
-	issues = append(issues, parameterDataClumpIssues(fset, parameterProfiles, cfg)...)
-	issues = append(issues, largeMethodSetIssues(fset, methodCount, methodExample, methodExampleEnd, cfg)...)
+	if checkEnabled(cfg, CheckSRPDataClump) {
+		issues = append(issues, parameterDataClumpIssues(fset, parameterProfiles, cfg)...)
+	}
+	if checkEnabled(cfg, CheckSRPLargeType) {
+		issues = append(issues, largeMethodSetIssues(fset, methodCount, methodExample, methodExampleEnd, cfg)...)
+	}
 	return issues
 }
 
@@ -98,7 +107,7 @@ func functionLengthIssue(fset *token.FileSet, fn *ast.FuncDecl, cfg Config) (Iss
 
 func parameterResponsibilityIssue(fset *token.FileSet, fn *ast.FuncDecl, cfg Config) (*functionParameterProfile, Issue, bool) {
 	profile := profileFunctionParameters(fn)
-	if flagNames := behaviorSelectingFlags(fn, profile.boolParameters); len(flagNames) > 0 {
+	if flagNames := behaviorSelectingFlags(fn, profile.boolParameters); checkEnabled(cfg, CheckSRPFlagArgument) && len(flagNames) > 0 {
 		profile.reported = true
 		return profile, issueAt(fset, fn, Issue{
 			Rule:     RuleSRP,
@@ -111,7 +120,7 @@ func parameterResponsibilityIssue(fset *token.FileSet, fn *ast.FuncDecl, cfg Con
 			),
 		}), true
 	}
-	if profile.count <= cfg.MaxFuncParams || profile.distinctTypes < 3 {
+	if !checkEnabled(cfg, CheckSRPMixedInputSurface) || profile.count <= cfg.MaxFuncParams || profile.distinctTypes < 3 {
 		return profile, Issue{}, false
 	}
 	profile.reported = true

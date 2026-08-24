@@ -130,6 +130,10 @@ type Issue struct {
 	analysisRoot string
 }
 
+func checkEnabled(cfg Config, id CheckID) bool {
+	return cfg.selectedChecks == nil || cfg.selectedChecks[id]
+}
+
 // AnalysisRoot returns the canonical analysis root used for portable paths.
 func (i Issue) AnalysisRoot() string {
 	return i.analysisRoot
@@ -275,6 +279,7 @@ type Config struct {
 	ToolVersion      string
 	Profile          Profile
 	EnabledChecks    []CheckID
+	selectedChecks   map[CheckID]bool
 
 	// SRP
 	MaxMethodsPerType       int // flag types (struct) that own more methods than this

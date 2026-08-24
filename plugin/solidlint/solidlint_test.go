@@ -7,16 +7,21 @@ import (
 )
 
 func TestModulePluginContract(t *testing.T) {
-	plugin, err := New(map[string]any{"profile": "stable"})
+	settings := map[string]any{"profile": "stable"}
+	plugin, err := New(settings)
 	if err != nil {
 		t.Fatal(err)
 	}
+	settings["profile"] = "all"
 	analyzers, err := plugin.BuildAnalyzers()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(analyzers) != 4 {
-		t.Fatalf("analyzers = %d, want SRP/LSP/ISP/DIP", len(analyzers))
+	if len(analyzers) != 3 {
+		t.Fatalf("analyzers = %d, want selected stable SRP/ISP/DIP groups", len(analyzers))
+	}
+	if analyzers[0].Name != "solidsrp" || analyzers[1].Name != "solidisp" || analyzers[2].Name != "soliddip" {
+		t.Fatalf("analyzers = %v, want deterministic selected groups", []string{analyzers[0].Name, analyzers[1].Name, analyzers[2].Name})
 	}
 }
 

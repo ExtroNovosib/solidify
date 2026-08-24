@@ -12,18 +12,19 @@ func init() {
 }
 
 type Plugin struct {
-	settings any
+	analyzers []*analysis.Analyzer
 }
 
 func New(settings any) (register.LinterPlugin, error) {
-	if _, err := analysisapi.NewAnalyzers(settings); err != nil {
+	analyzers, err := analysisapi.NewAnalyzers(settings)
+	if err != nil {
 		return nil, err
 	}
-	return &Plugin{settings: settings}, nil
+	return &Plugin{analyzers: analyzers}, nil
 }
 
 func (p *Plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
-	return analysisapi.NewAnalyzers(p.settings)
+	return append([]*analysis.Analyzer(nil), p.analyzers...), nil
 }
 
 func (*Plugin) GetLoadMode() string { return register.LoadModeTypesInfo }

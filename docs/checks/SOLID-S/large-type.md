@@ -1,25 +1,43 @@
 # SOLID-S/large-type
 
-Heuristic check for **large type** smells in Go code.
-
-Example: scan the package directory and review the reported evidence before suppressing with `//solidify:ignore SOLID-S/large-type reason`.
+Reports a type only when several independent size and complexity signals agree. The default stable rule avoids treating one large-looking metric as proof of mixed responsibility.
 
 ## Product contract
 
-- Maturity: **stable**. Experimental checks require `profile: all`, `-profile=all`, or explicit `enabled_checks`.
-- Analysis modes: conservative syntax fallback; complete types are used when available.
-- Surfaces: standalone CLI, module plugin, and matched-ABI Go plugin.
-- Evidence names the matched source construct; metrics record measured values, configured thresholds, and comparators. Fingerprints use the check ID, portable path, subject, and identity, never the message or measured counts.
+Maturity: **stable**
+
+Analysis modes: conservative syntax fallback; full type information is used when available.
+
+Surfaces: standalone CLI and both GolangCI plugin modes.
 
 ## Examples
 
+Positive: [stable positive evaluation fixture](../../../testdata/evaluation/positive/stable.go).
+
+Clean: [stable negative evaluation fixture](../../../testdata/evaluation/negative/stable.go).
+
+Evaluation case `stable-large-type` is implemented in [the positive fixture](../../../testdata/evaluation/positive/stable.go) and checked against [the boundary fixture](../../../testdata/evaluation/negative/stable.go).
+
 ```go
-// Positive: the focused positive fixture for SOLID-S/large-type crosses the documented signal.
-// Clean: its boundary and clean counterexamples remain at or below the signal.
+package example
+
+type LargeService struct {
+	ID int
+	Name string
+	Enabled bool
+	Payload []byte
+	Metadata map[string]string
+}
+func (*LargeService) Create() {}
+func (*LargeService) Delete() {}
 ```
 
-The analyzer corpus contains the executable positive, boundary, and clean examples. Run `go test ./internal/analyzer -count=1` and `make precision` after changing detection behavior.
+The checked-in positive expands this compilable shape to eleven heterogeneous fields, eleven exported methods, and aggregate complexity above the default WMC boundary. The negative case stays at ten fields and ten methods.
+
+## Evidence and configuration
+
+Evidence uses `large-type:type=<name>;methods=<n>;exported_methods=<n>;fields=<n>;loc=<n>;wmc=<n>;signals=<n>`. Metrics identify each configured comparator. Relevant keys are `max_methods`, `max_fields`, `max_exported_methods`, `max_type_lines`, `max_type_complexity`, and `min_large_type_signals`.
 
 ## Limitations and remediation
 
-This is an explainable heuristic, not proof of a design defect. Review generated code, DTOs, composition roots, adapters, thin wrappers, and framework contracts before refactoring. Prefer a behavior-preserving extraction or narrower consumer-owned abstraction. The only automatic fix is a reason-bearing `//solidify:ignore SOLID-S/large-type ...` triage comment; baselines v4 accept reviewed debt without changing source. Configure canonical snake_case thresholds where the check exposes them, and use exact IDs in `disabled_checks`, severity overrides, suppressions, and baselines.
+Generated models, DTOs, serialization records, and framework-owned structures may be intentionally broad. Confirm that the reported methods and fields change for different reasons before extracting cohesive services or value types. Solidlint does not advertise a generic suppression as a safe repair. Use a justified source suppression for a local exception, or baseline v5 with a review reason, owner, and optional expiry for tracked debt. See the [stable v0.2 evaluation](../../evaluations/stable-v0.2.md).

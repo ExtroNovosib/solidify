@@ -299,18 +299,8 @@ func yamlMapValueNode(node *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-var knownThresholdNames = []string{
-	"max_methods", "max_func_lines", "max_params", "max_switch_cases", "max_interface_methods",
-	"isp_min_methods", thresholdISPUsage, "max_fields", "max_type_lines", "max_exported_methods",
-	"max_func_complexity", "max_type_complexity", "max_fanout", "max_atfd",
-	"min_large_type_signals", thresholdMinTCC, "min_cohesion_methods", "min_cohesion_fields",
-	"min_component_methods", "min_import_cluster_methods", "ocp_min_dispatch_sites", "ocp_min_shared_variants",
-	thresholdOCPOverlap, "ocp_min_concrete_parameter_methods", "ocp_min_implementation_imports",
-	"ocp_min_parallel_functions", "ocp_min_parallel_nodes", thresholdOCPSimilarity, "dip_composition_root_fields",
-}
-
 func nearestKnownThreshold(input string) string {
-	return nearestKnownField(input, knownThresholdNames)
+	return nearestKnownField(input, thresholdNames())
 }
 
 func nearestKnownCheckID(input string) string {

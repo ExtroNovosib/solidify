@@ -31,12 +31,26 @@ var defaultDIPTransportTypes = []string{
 // imports, module paths, or cross-file type information.
 func CheckDIPProgram(pkgs []*packageFiles, cfg Config) []Issue {
 	var issues []Issue
-	issues = append(issues, emitDIPLayerImport(pkgs, cfg)...)
-	hidden, hiddenSites := emitDIPHiddenConstruction(pkgs, cfg)
-	issues = append(issues, hidden...)
-	issues = append(issues, emitDIPWiringOutsideRoot(pkgs, cfg, hiddenSites)...)
-	issues = append(issues, emitDIPInfraErrorLeak(pkgs, cfg)...)
-	issues = append(issues, emitDIPTransportLeak(pkgs, cfg)...)
+	if checkEnabled(cfg, CheckDIPLayerImport) {
+		issues = append(issues, emitDIPLayerImport(pkgs, cfg)...)
+	}
+	var hidden []Issue
+	hiddenSites := map[string]bool{}
+	if checkEnabled(cfg, CheckDIPHiddenConstruction) || checkEnabled(cfg, CheckDIPWiringOutsideRoot) {
+		hidden, hiddenSites = emitDIPHiddenConstruction(pkgs, cfg)
+	}
+	if checkEnabled(cfg, CheckDIPHiddenConstruction) {
+		issues = append(issues, hidden...)
+	}
+	if checkEnabled(cfg, CheckDIPWiringOutsideRoot) {
+		issues = append(issues, emitDIPWiringOutsideRoot(pkgs, cfg, hiddenSites)...)
+	}
+	if checkEnabled(cfg, CheckDIPInfraErrorLeak) {
+		issues = append(issues, emitDIPInfraErrorLeak(pkgs, cfg)...)
+	}
+	if checkEnabled(cfg, CheckDIPTransportLeak) {
+		issues = append(issues, emitDIPTransportLeak(pkgs, cfg)...)
+	}
 	return issues
 }
 
