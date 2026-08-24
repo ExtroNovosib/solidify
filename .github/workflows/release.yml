@@ -8,7 +8,7 @@ jobs:
   consumer-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with: {go-version: 1.25.x, cache: true}
       - run: make release-consumer-smoke SOLIDLINT_VERSION=${{ github.ref_name }}
@@ -17,7 +17,7 @@ jobs:
     needs: consumer-smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with: {fetch-depth: 0}
       - uses: actions/setup-go@v7
         with: {go-version: 1.25.x}
