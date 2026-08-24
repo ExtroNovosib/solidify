@@ -113,6 +113,8 @@ var checkRegistry = completeCheckMetadata([]Check{
 		RunPackage:  runISPCheck,
 	},
 	{ID: CheckISPUsageRatio, Name: "Interface usage ratio", Rule: RuleISP, Scope: ScopePackage, Doc: "A client uses only a small fraction of an interface.", HelpURI: checkHelpURI(CheckISPUsageRatio), DefaultSev: SeverityWarning, RunnerGroup: "isp-package"},
+	{ID: CheckISPConsumerRole, Name: "Consumer interface role", Rule: RuleISP, Scope: ScopePackage, Doc: "Flags a consumer field that receives a broader interface than its role needs.", HelpURI: checkHelpURI(CheckISPConsumerRole), DefaultSev: SeverityWarning, RunnerGroup: "isp-package"},
+	{ID: CheckISPUnusedDependency, Name: "Unused injected dependency", Rule: RuleISP, Scope: ScopePackage, Doc: "Flags an injected interface dependency that is never consumed, including short unread field flows.", HelpURI: checkHelpURI(CheckISPUnusedDependency), DefaultSev: SeverityWarning, RunnerGroup: "isp-package"},
 	{ID: CheckISPStubImplementation, Name: "Stub implementation", Rule: RuleISP, Scope: ScopePackage, Doc: "A method unconditionally panics or returns ErrUnsupported.", HelpURI: checkHelpURI(CheckISPStubImplementation), DefaultSev: SeverityWarning, RunnerGroup: "isp-package"},
 	{
 		ID: CheckDIPConcreteDependency, Name: "Concrete dependency", Rule: RuleDIP, Scope: ScopePackage,
@@ -159,6 +161,7 @@ func completeCheckMetadata(checks []Check) []Check {
 		CheckSRPDataClump: true, CheckSRPFlagArgument: true,
 		CheckSRPMixedImportClusters: true, CheckLSPNonExactEOF: true,
 		CheckISPFatInterface: true, CheckISPUsageRatio: true,
+		CheckISPConsumerRole: true, CheckISPUnusedDependency: true,
 		CheckISPStubImplementation: true, CheckDIPConcreteDependency: true,
 	}
 	for index := range checks {
@@ -235,8 +238,8 @@ func ResolveCheckSelection(profile Profile, enabledRules map[Rule]bool, enabledC
 	if profile == "" {
 		profile = ProfileStable
 	}
-	if profile != ProfileStable && profile != ProfileAll {
-		return nil, fmt.Errorf("profile must be stable or all, got %q", profile)
+	if profile != ProfileStable && profile != ProfileAll && profile != ProfileCalibration {
+		return nil, fmt.Errorf("profile must be stable, all, or calibration, got %q", profile)
 	}
 	enabledExact := make(map[CheckID]bool, len(enabledChecks))
 	for _, id := range enabledChecks {
@@ -257,11 +260,18 @@ func ResolveCheckSelection(profile Profile, enabledRules map[Rule]bool, enabledC
 	}
 	selection := make(map[CheckID]bool, len(checkRegistry))
 	for _, check := range checkRegistry {
-		inProfile := profile == ProfileAll || check.Maturity == MaturityStable
+		inProfile := profile == ProfileAll ||
+			(profile == ProfileStable && check.Maturity == MaturityStable) ||
+			(profile == ProfileCalibration && calibrationChecks[check.ID])
 		familyEnabled := len(enabledRules) == 0 || enabledRules[check.Rule]
 		selection[check.ID] = (inProfile || enabledExact[check.ID]) && familyEnabled && !disabledExact[check.ID]
 	}
 	return selection, nil
+}
+
+var calibrationChecks = map[CheckID]bool{
+	CheckISPConsumerRole:     true,
+	CheckISPUnusedDependency: true,
 }
 
 // SelectedCheckIDs returns selected IDs in registry order.

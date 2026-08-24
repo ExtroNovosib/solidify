@@ -31,7 +31,7 @@ func NewArchiveService(client *database.PostgreSQLClient) *ArchiveService {
 
 ## Evidence and configuration
 
-Evidence records the constructor or field and fully qualified concrete dependency. Same-package types, behaviorless domain data, `*Config` bags, composition roots, and entries in `dip.allow_dependencies` are excluded. Types improve classification; conservative syntax fallback remains available.
+Evidence records the constructor or field and fully qualified concrete dependency. Same-package types, behaviorless domain data, `*Config` bags, composition roots, and entries in `dip.allow_dependencies` are excluded. In `*_test.go`, a domain entity or serialized DTO held only as fake state is also excluded unless the fake invokes its methods or passes it to a constructor as a collaborator. Types improve classification; conservative syntax fallback remains available.
 
 ## Limitations and remediation
 

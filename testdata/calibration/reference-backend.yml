@@ -1,0 +1,11 @@
+profile: calibration
+thresholds:
+  isp_usage_ratio_percent: 61
+architecture:
+  composition_roots:
+    - example.com/reference/backend/internal/app/**
+  logic_packages:
+    - example.com/reference/backend/internal/*/application/**
+    - example.com/reference/backend/internal/*/ports/**
+  implementation_packages:
+    - example.com/reference/backend/internal/*/adapters/**

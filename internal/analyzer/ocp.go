@@ -119,7 +119,7 @@ func collectOCPAnalysis(pkgs []*packageFiles, cfg Config) ocpAnalysis {
 					result.dispatches = append(result.dispatches, &ocpDispatchSite{
 						pkg: pkg, node: current, pos: pkg.fset.Position(current.Pos()),
 						function: enclosingFunction(functions, current.Pos(), pkg.pkgPath),
-						source:   source, sourceKey: dispatchSourceKey(pkg, file, source, sourceExpr), variants: uniqueSorted(variants),
+						source:   source, sourceKey: dispatchSourceKey(pkg, file, source, sourceExpr, false), variants: uniqueSorted(variants),
 						kind:          "type switch",
 						defaultBad:    typeSwitchHasUnsupportedDefault(current),
 						serialization: isSerializationFunction(enclosingFunctionName(functions, current.Pos())),
@@ -148,7 +148,7 @@ func collectOCPAnalysis(pkgs []*packageFiles, cfg Config) ocpAnalysis {
 					result.dispatches = append(result.dispatches, &ocpDispatchSite{
 						pkg: pkg, node: current, pos: pkg.fset.Position(current.Pos()),
 						function: enclosingFunction(functions, current.Pos(), pkg.pkgPath),
-						source:   source, sourceKey: dispatchSourceKey(pkg, file, source, sourceExpr), variants: uniqueSorted(variants),
+						source:   source, sourceKey: dispatchSourceKey(pkg, file, source, sourceExpr, length == 1), variants: uniqueSorted(variants),
 						kind: func() string {
 							if length == 1 {
 								return ocpKindTypeAssertion
@@ -165,7 +165,7 @@ func collectOCPAnalysis(pkgs []*packageFiles, cfg Config) ocpAnalysis {
 					result.dispatches = append(result.dispatches, &ocpDispatchSite{
 						pkg: pkg, node: current, pos: pkg.fset.Position(current.Pos()),
 						function: enclosingFunction(functions, current.Pos(), pkg.pkgPath),
-						source:   source, sourceKey: dispatchSourceKey(pkg, file, source, current.X), variants: []string{typeExpressionKey(current.Type, pkg.info)},
+						source:   source, sourceKey: dispatchSourceKey(pkg, file, source, current.X, true), variants: []string{typeExpressionKey(current.Type, pkg.info)},
 						kind:          ocpKindTypeAssertion,
 						serialization: isSerializationFunction(enclosingFunctionName(functions, current.Pos())),
 					})

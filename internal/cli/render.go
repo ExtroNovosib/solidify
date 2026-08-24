@@ -24,7 +24,7 @@ func renderIssues(issues []analyzer.Issue, format string, profile analyzer.Profi
 	default:
 		for _, issue := range issues {
 			metadata, known := analyzer.CheckMetadata(issue.Check)
-			if profile == analyzer.ProfileAll && known && metadata.Maturity == analyzer.MaturityExperimental {
+			if (profile == analyzer.ProfileAll || profile == analyzer.ProfileCalibration) && known && metadata.Maturity == analyzer.MaturityExperimental {
 				fmt.Println(issue.String(), "[experimental]")
 			} else {
 				fmt.Println(issue.String())

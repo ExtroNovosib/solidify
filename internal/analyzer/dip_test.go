@@ -372,3 +372,58 @@ type prepared struct {
 		t.Fatalf("unexpected domain dependency issue: %+v", issues[0])
 	}
 }
+
+func TestCheckDIPWithTypes_TestDomainStateNeedsBehavioralEvidence(t *testing.T) {
+	dir := t.TempDir()
+	initTempModule(t, dir)
+	domainDir := filepath.Join(dir, "domain")
+	if err := os.MkdirAll(domainDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(domainDir, "user.go"), []byte(`package domain
+
+type User struct{}
+
+func (*User) Display() string { return "user" }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "service.go"), []byte("package p\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "service_test.go"), []byte(`package p
+
+import "tempmod/domain"
+
+type fakeRepository struct {
+	stored       *domain.User
+	collaborator *domain.User
+	name         string
+	calls        int
+}
+
+func (f *fakeRepository) Get() *domain.User { return f.stored }
+func (f *fakeRepository) Display() string    { return f.collaborator.Display() }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var pkg *packageFiles
+	for _, candidate := range loadWorkspaceDir(t, dir, true, "types") {
+		for _, file := range candidate.files {
+			if strings.HasSuffix(candidate.fset.Position(file.Pos()).Filename, "service_test.go") {
+				pkg = candidate
+			}
+		}
+	}
+	if pkg == nil {
+		t.Fatal("test package was not loaded")
+	}
+	issues := issuesWithCheck(CheckDIPWithTypes(pkg.fset, pkg.files, pkg.info, DefaultConfig(), pkg), CheckDIPConcreteDependency)
+	if len(issues) != 1 {
+		t.Fatalf("test domain state issues = %d, want only behavioral collaborator: %v", len(issues), issues)
+	}
+	if issues[0].Evidence != "concrete-dependency:type=fakeRepository;field=collaborator;dependency=tempmod/domain.User" {
+		t.Fatalf("unexpected behavioral test dependency: %+v", issues[0])
+	}
+}

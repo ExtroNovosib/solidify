@@ -17,7 +17,7 @@ BASELINE ?= .solidlint-baseline.json
 # Self-check scope: lint the analyzer implementation, not fixture corpora.
 LINT_PKG := ./internal/analyzer/...
 
-.PHONY: all build plugin run report enforce install test test-unit test-integration test-e2e test-race coverage vet vulncheck fmt fmt-check golangci-lint lint smoke precision cli-e2e plugin-module-e2e plugin-go-e2e e2e cache-parity sarif-check schema-check release-consumer-smoke release-snapshot version-check check-fast check check-release clean help
+.PHONY: all build plugin run report enforce install test test-unit test-integration test-e2e test-race coverage vet vulncheck fmt fmt-check golangci-lint lint smoke precision cli-e2e plugin-module-e2e plugin-go-e2e e2e cache-parity sarif-check schema-check release-consumer-smoke release-snapshot publish-release-test publish version-check check-fast check check-release clean help
 
 all: build
 
@@ -122,6 +122,13 @@ release-consumer-smoke:
 release-snapshot:
 	@if command -v $(GORELEASER) >/dev/null 2>&1; then $(GORELEASER) release --snapshot --clean; else echo "goreleaser is required for release-snapshot" >&2; exit 1; fi
 
+publish-release-test:
+	./scripts/publish-release_test.sh
+
+publish:
+	@test -n "$(VERSION)" || (echo "VERSION is required (for example, v0.2.0)" >&2; exit 2)
+	./scripts/publish-release.sh $(PUBLISH_FLAGS) $(VERSION)
+
 version-check: $(BUILD_DIR)
 	$(GO) build $(GOFLAGS) -ldflags "-X main.version=$(TEST_VERSION)" -o $(VERSION_BUILD) $(COMMAND)
 	@test "$$($(VERSION_BUILD) -version)" = "$(TEST_VERSION)"
@@ -165,6 +172,8 @@ help:
 	@echo "  schema-check - validate CLI JSON output against solidlint-result-v3.schema.json"
 	@echo "  release-consumer-smoke - install a published version and exercise its CLI and GolangCI module plugin"
 	@echo "  release-snapshot - build release archives, checksums, and SBOMs with GoReleaser"
+	@echo "  publish-release-test - verify publishing-script argument validation"
+	@echo "  publish - qualify and push VERSION as an immutable release tag"
 	@echo "  version-check - verify linker-injected version reporting surfaces"
 	@echo "  check-fast - run the short formatting, vet, unit, integration, and lint loop"
 	@echo "  check   - run every local reliability gate once"

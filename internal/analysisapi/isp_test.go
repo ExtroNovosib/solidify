@@ -53,6 +53,7 @@ func TestFactoryBuildsSelectedAnalyzerGroups(t *testing.T) {
 		want     []string
 	}{
 		{name: "stable", settings: map[string]any{"profile": "stable"}, want: []string{"solidsrp", "solidisp", "soliddip"}},
+		{name: "calibration", settings: map[string]any{"profile": "calibration"}, want: []string{"solidisp"}},
 		{name: "lsp only", settings: map[string]any{"profile": "all", "enabled_rules": []string{"L"}}, want: []string{"solidlsp"}},
 		{name: "dip only", settings: map[string]any{"profile": "all", "enabled_rules": []string{"D"}}, want: []string{"soliddip"}},
 	}

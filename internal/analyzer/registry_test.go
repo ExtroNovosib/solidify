@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -16,7 +17,7 @@ func TestCheckRegistryCompleteness(t *testing.T) {
 		CheckOCPTypeDispatch, CheckOCPDiscriminatorDispatch, CheckOCPRuntimeExhaustiveness,
 		CheckOCPConcreteParameter, CheckOCPClosedFactory, CheckOCPImplementationCoupling,
 		CheckOCPParallelImplementations, CheckLSPNonExactEOF, CheckLSPNilEmbeddedInterface,
-		CheckISPFatInterface, CheckISPUsageRatio, CheckISPStubImplementation,
+		CheckISPFatInterface, CheckISPUsageRatio, CheckISPConsumerRole, CheckISPUnusedDependency, CheckISPStubImplementation,
 		CheckDIPConcreteDependency, CheckDIPLayerImport, CheckDIPWiringOutsideRoot,
 		CheckDIPHiddenConstruction, CheckDIPInfraErrorLeak, CheckDIPTransportLeak,
 	}
@@ -79,7 +80,7 @@ func TestCheckRegistryProfilesModesAndSurfaces(t *testing.T) {
 		CheckSRPMixedInputSurface: true, CheckSRPDataClump: true,
 		CheckSRPFlagArgument: true, CheckSRPMixedImportClusters: true,
 		CheckLSPNonExactEOF: true, CheckISPFatInterface: true,
-		CheckISPUsageRatio: true, CheckISPStubImplementation: true,
+		CheckISPUsageRatio: true, CheckISPConsumerRole: true, CheckISPUnusedDependency: true, CheckISPStubImplementation: true,
 		CheckDIPConcreteDependency: true,
 	}
 	stableCount, pluginCount := 0, 0
@@ -107,11 +108,11 @@ func TestCheckRegistryProfilesModesAndSurfaces(t *testing.T) {
 	if stableCount != 7 {
 		t.Fatalf("stable checks = %d, want 7", stableCount)
 	}
-	if pluginCount != 14 {
-		t.Fatalf("plugin checks = %d, want 14", pluginCount)
+	if pluginCount != 16 {
+		t.Fatalf("plugin checks = %d, want 16", pluginCount)
 	}
-	if modeCounts[SyntaxEquivalent] != 4 || modeCounts[SyntaxConservative] != 9 || modeCounts[SyntaxUnavailable] != 14 {
-		t.Fatalf("syntax capability counts = %v, want equivalent=4 conservative=9 unavailable=14", modeCounts)
+	if modeCounts[SyntaxEquivalent] != 4 || modeCounts[SyntaxConservative] != 9 || modeCounts[SyntaxUnavailable] != 16 {
+		t.Fatalf("syntax capability counts = %v, want equivalent=4 conservative=9 unavailable=16", modeCounts)
 	}
 }
 
@@ -122,6 +123,20 @@ func TestResolveCheckSelection(t *testing.T) {
 	}
 	if got := len(SelectedCheckIDs(stable)); got != 7 {
 		t.Fatalf("stable selection = %d checks, want 7", got)
+	}
+	calibration, err := ResolveCheckSelection(ProfileCalibration, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := SelectedCheckIDs(calibration), []CheckID{CheckISPConsumerRole, CheckISPUnusedDependency}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("calibration selection = %v, want %v", got, want)
+	}
+	calibration, err = ResolveCheckSelection(ProfileCalibration, nil, nil, []CheckID{CheckISPConsumerRole})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := SelectedCheckIDs(calibration), []CheckID{CheckISPUnusedDependency}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("calibration disabled selection = %v, want %v", got, want)
 	}
 	selected, err := ResolveCheckSelection(ProfileStable, map[Rule]bool{RuleSRP: true}, []CheckID{CheckSRPComplexFunction}, []CheckID{CheckSRPLargeType})
 	if err != nil {

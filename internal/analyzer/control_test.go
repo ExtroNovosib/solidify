@@ -26,6 +26,20 @@ func TestLoadFileConfigAndApply(t *testing.T) {
 	}
 }
 
+func TestLoadFileConfigAcceptsCalibrationProfile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".solidify.yml")
+	if err := os.WriteFile(path, []byte("profile: calibration\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := LoadFileConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Profile != ProfileCalibration {
+		t.Fatalf("profile = %q, want %q", c.Profile, ProfileCalibration)
+	}
+}
+
 func TestLoadFileConfigSRPControls(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".solidify.yml")
 	content := `fail_level: note

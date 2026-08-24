@@ -31,7 +31,7 @@ func Dispatch(value any) {
 
 ## Evidence and configuration
 
-Evidence records the dispatch source, correlated sites, shared variants, full variant set, and maximum cases. `max_switch_cases`, `ocp_min_dispatch_sites`, `ocp_min_shared_variants`, and `ocp_dispatch_overlap_percent` control the decision. This program-scoped check runs in the standalone CLI, not package plugins.
+Evidence records the dispatch source, correlated sites, shared variants, full variant set, and maximum cases. `max_switch_cases`, `ocp_min_dispatch_sites`, `ocp_min_shared_variants`, and `ocp_dispatch_overlap_percent` control the decision. Anonymous `any` and `interface{}` assertions are correlated only by their lexical source; unrelated JSON-shape assertions are not treated as one program-wide variant family. This program-scoped check runs in the standalone CLI, not package plugins.
 
 ## Limitations and remediation
 

@@ -129,6 +129,9 @@ func structFieldConcreteIssue(env dipFieldEnv, field *ast.Field) (Issue, bool) {
 	if len(field.Names) > 0 {
 		fieldName = field.Names[0].Name
 	}
+	if passiveTestDataField(env, field) {
+		return Issue{}, false
+	}
 	if concreteFieldIsExposed(env.files, env.info, env.typeName, fieldName, dep) {
 		return Issue{}, false
 	}
@@ -144,6 +147,77 @@ func structFieldConcreteIssue(env dipFieldEnv, field *ast.Field) (Issue, bool) {
 		),
 		Evidence: fmt.Sprintf("concrete-dependency:type=%s;field=%s;dependency=%s", env.typeName, fieldName, dep),
 	}), true
+}
+
+// passiveTestDataField excludes test-fixture state that stores a domain value
+// or DTO for later return/assertion. A direct method call or use as a
+// constructor collaborator remains a concrete dependency signal.
+func passiveTestDataField(env dipFieldEnv, field *ast.Field) bool {
+	if env.info == nil || len(field.Names) == 0 || !strings.HasSuffix(env.fset.Position(field.Pos()).Filename, "_test.go") {
+		return false
+	}
+	fieldType := env.info.TypeOf(field.Type)
+	if !isDomainStructType(fieldType) && !isSerializedTestDataType(fieldType) {
+		return false
+	}
+	fieldObject, ok := env.info.Defs[field.Names[0]].(*types.Var)
+	return ok && !testFieldHasBehavioralEvidence(env.files, env.info, env.typeName, fieldObject)
+}
+
+func testFieldHasBehavioralEvidence(files []*ast.File, info *types.Info, owner string, fieldObject *types.Var) bool {
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || !isReceiverMethodOf(fn, owner) {
+				continue
+			}
+			parents := astParentIndex(fn.Body)
+			behavioral := false
+			ast.Inspect(fn.Body, func(node ast.Node) bool {
+				selector, ok := node.(*ast.SelectorExpr)
+				if !ok || selectionObject(info, selector) != fieldObject {
+					return true
+				}
+				if member, ok := parents[selector].(*ast.SelectorExpr); ok && member.X == selector {
+					selection := info.Selections[member]
+					if selection != nil && selection.Kind() == types.MethodVal {
+						behavioral = true
+						return false
+					}
+				}
+				if call, ok := parents[selector].(*ast.CallExpr); ok && constructorCallUses(call, selector) {
+					behavioral = true
+					return false
+				}
+				return true
+			})
+			if behavioral {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func constructorCallUses(call *ast.CallExpr, argument ast.Expr) bool {
+	used := false
+	for _, candidate := range call.Args {
+		if candidate == argument {
+			used = true
+			break
+		}
+	}
+	if !used {
+		return false
+	}
+	switch callee := call.Fun.(type) {
+	case *ast.Ident:
+		return strings.HasPrefix(callee.Name, "New")
+	case *ast.SelectorExpr:
+		return strings.HasPrefix(callee.Sel.Name, "New")
+	default:
+		return false
+	}
 }
 
 func concreteFieldIsExposed(files []*ast.File, info *types.Info, owner, fieldName, dependency string) bool {
@@ -386,18 +460,16 @@ func allowedDependency(dep string, cfg Config) bool {
 // no behavior. Depending on such values directly is idiomatic Go data flow, not
 // a dependency on replaceable behavior.
 func isPassiveDomainDataType(t types.Type) bool {
-	if t == nil {
+	named, ok := namedConcreteStructType(t)
+	if !ok || !isDomainStructType(t) {
 		return false
 	}
-	t = types.Unalias(t)
-	if pointer, ok := t.(*types.Pointer); ok {
-		t = types.Unalias(pointer.Elem())
-	}
-	named, ok := t.(*types.Named)
+	return types.NewMethodSet(named).Len() == 0 && types.NewMethodSet(types.NewPointer(named)).Len() == 0
+}
+
+func isDomainStructType(t types.Type) bool {
+	named, ok := namedConcreteStructType(t)
 	if !ok || named.Obj() == nil || named.Obj().Pkg() == nil {
-		return false
-	}
-	if _, ok := named.Underlying().(*types.Struct); !ok {
 		return false
 	}
 	pkg := named.Obj().Pkg()
@@ -409,7 +481,46 @@ func isPassiveDomainDataType(t types.Type) bool {
 	if pkg.Name() != "domain" && pathBase != "domain" {
 		return false
 	}
-	return types.NewMethodSet(named).Len() == 0 && types.NewMethodSet(types.NewPointer(named)).Len() == 0
+	return true
+}
+
+func isSerializedTestDataType(t types.Type) bool {
+	named, ok := namedConcreteStructType(t)
+	if !ok || named.Obj() == nil {
+		return false
+	}
+	name := named.Obj().Name()
+	for _, suffix := range []string{"DTO", "Data", "Input", "Output", "Payload", "Record", "Request", "Response"} {
+		if strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	structure, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+	for index := 0; index < structure.NumFields(); index++ {
+		if strings.Contains(structure.Tag(index), "json:") {
+			return true
+		}
+	}
+	return false
+}
+
+func namedConcreteStructType(t types.Type) (*types.Named, bool) {
+	if t == nil {
+		return nil, false
+	}
+	t = types.Unalias(t)
+	if pointer, ok := t.(*types.Pointer); ok {
+		t = types.Unalias(pointer.Elem())
+	}
+	named, ok := t.(*types.Named)
+	if !ok {
+		return nil, false
+	}
+	_, ok = named.Underlying().(*types.Struct)
+	return named, ok
 }
 
 func isStdlibConcreteType(t types.Type) bool {

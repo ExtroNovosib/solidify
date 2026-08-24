@@ -78,7 +78,7 @@ func schemaProperties(checkIDs []string, thresholds map[string]any) map[string]a
 	}
 	severityValues := []string{"note", "warning", "error"}
 	return map[string]any{
-		"profile":            map[string]any{"enum": []string{"stable", "all"}},
+		"profile":            map[string]any{"enum": []string{"stable", "all", "calibration"}},
 		"enabled_rules":      map[string]any{"type": "array", "items": map[string]any{"enum": []string{"S", "O", "L", "I", "D"}}, "uniqueItems": true},
 		"enabled_checks":     checkArray(),
 		"disabled_checks":    checkArray(),

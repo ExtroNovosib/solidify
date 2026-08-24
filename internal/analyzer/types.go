@@ -28,8 +28,9 @@ type CheckID string
 type Profile string
 
 const (
-	ProfileStable Profile = "stable"
-	ProfileAll    Profile = "all"
+	ProfileStable      Profile = "stable"
+	ProfileAll         Profile = "all"
+	ProfileCalibration Profile = "calibration"
 )
 
 const (
@@ -45,6 +46,8 @@ const (
 
 	CheckISPFatInterface       CheckID = "SOLID-I/fat-interface"
 	CheckISPUsageRatio         CheckID = "SOLID-I/usage-ratio"
+	CheckISPConsumerRole       CheckID = "SOLID-I/consumer-role"
+	CheckISPUnusedDependency   CheckID = "SOLID-I/unused-dependency"
 	CheckISPStubImplementation CheckID = "SOLID-I/stub-implementation"
 
 	CheckOCPTypeDispatch            CheckID = "SOLID-O/type-dispatch"

@@ -4,4 +4,4 @@ The default `stable` profile is deliberately conservative. A stable rule must ha
 
 An experimental rule does not graduate merely because synthetic fixtures pass. Graduation requires a separately recorded manual evaluation on representative real Go projects, review of false-positive and false-negative examples, an updated report under `docs/evaluations/`, and an explicit registry maturity change in a later release. The manifest and report are review evidence, not generated claims of correctness.
 
-The standalone CLI is the complete program analyzer. GolangCI plugins are package-scoped and expose only the nine SRP checks, `SOLID-L/non-exact-eof`, the three ISP checks, and `SOLID-D/concrete-dependency`.
+The standalone CLI is the complete program analyzer. GolangCI plugins are package-scoped and expose only the nine SRP checks, `SOLID-L/non-exact-eof`, the five ISP checks, and `SOLID-D/concrete-dependency`.

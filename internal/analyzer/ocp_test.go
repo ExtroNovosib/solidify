@@ -100,16 +100,17 @@ func f(x any) {
 
 func TestCheckOCP_StandaloneAssertions(t *testing.T) {
 	src := `package p
+type Event interface{}
 type A struct{}
 type B struct{}
 type C struct{}
 type D struct{}
 type E struct{}
-func a(x any) { _ = x.(A) }
-func b(x any) { _ = x.(B) }
-func c(x any) { _ = x.(C) }
-func d(x any) { _ = x.(D) }
-func e(x any) { _ = x.(E) }
+func a(x Event) { _ = x.(A) }
+func b(x Event) { _ = x.(B) }
+func c(x Event) { _ = x.(C) }
+func d(x Event) { _ = x.(D) }
+func e(x Event) { _ = x.(E) }
 `
 	fset, files := parseSource(t, src)
 	cfg := DefaultConfig()
@@ -117,6 +118,30 @@ func e(x any) { _ = x.(E) }
 	issues := CheckOCP(fset, files, cfg)
 	if len(issues) != 1 || !strings.Contains(issues[0].Message, "dispatches on") {
 		t.Fatalf("unexpected issues: %v", issues)
+	}
+}
+
+func TestCheckOCP_DynamicJSONShapeAssertionsAreNotCorrelated(t *testing.T) {
+	src := `package p
+
+func Verify(data map[string]any) {
+	_, _ = data["role"].(string)
+	_, _ = data["profile"].(map[string]any)
+	_, _ = data["intakes"].([]map[string]any)
+	_, _ = data["watchlist"].([]map[string]any)
+	_, _ = data["comments"].([]map[string]any)
+}
+`
+	fset, files := parseSource(t, src)
+	info := typeCheckSource(t, fset, files)
+	pkg := &packageFiles{
+		fset: fset, files: files, info: info, typeComplete: true,
+		pkgPath: "example.com/p", generated: map[*ast.File]bool{},
+	}
+	for _, issue := range CheckOCPProgram([]*packageFiles{pkg}, DefaultConfig()) {
+		if issue.Check == CheckOCPTypeDispatch {
+			t.Fatalf("unrelated JSON shape assertions were correlated: %v", issue)
+		}
 	}
 }
 

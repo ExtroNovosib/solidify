@@ -28,6 +28,12 @@ func CheckISPWithTypes(fset *token.FileSet, files []*ast.File, info *types.Info,
 	if checkEnabled(cfg, CheckISPUsageRatio) {
 		issues = append(issues, checkISPUsageRatio(fset, files, info, cfg, pkg)...)
 	}
+	if checkEnabled(cfg, CheckISPConsumerRole) {
+		issues = append(issues, checkISPConsumerRoles(fset, files, info, cfg, pkg)...)
+	}
+	if checkEnabled(cfg, CheckISPUnusedDependency) {
+		issues = append(issues, checkISPUnusedDependencies(fset, files, info, cfg, pkg)...)
+	}
 	if checkEnabled(cfg, CheckISPStubImplementation) {
 		issues = append(issues, checkISPStubImplementation(fset, files, info, cfg, pkg)...)
 	}

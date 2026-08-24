@@ -5,9 +5,13 @@
 
 Version 0.1 requires Go 1.25. The default `stable` profile runs exactly seven
 corpus-backed checks: `SOLID-S/large-type`, `SOLID-S/data-clump`,
-`SOLID-O/type-dispatch`, all three `SOLID-I/*` checks, and
-`SOLID-D/concrete-dependency`. Use `-profile=all` for all 27 checks or
+`SOLID-O/type-dispatch`, the three stable `SOLID-I/*` checks, and
+`SOLID-D/concrete-dependency`. Use `-profile=all` for all 29 checks or
 `-enable-checks=SOLID-S/complex-function,...` for granular experimental opt-in.
+Use `-profile=calibration` for the dedicated high-precision ISP lane
+(`SOLID-I/consumer-role` and `SOLID-I/unused-dependency`); see
+[the calibration profile](docs/profiles/calibration.md) for the reviewed
+reference backend configuration.
 
 The tool uses `golang.org/x/tools/go/packages` to load a consistent module
 universe and `go/types` facts for cross-package checks. Its default `auto`
@@ -59,6 +63,7 @@ go build -o solidlint ./cmd/solidlint
 ./solidlint check ./...
 ./solidlint ./... # legacy form; equivalent to "check"
 ./solidlint check -profile=all -fail=false ./...
+./solidlint check -profile=calibration -config testdata/calibration/reference-backend.yml -fail=false /path/to/backend/internal
 ./solidlint -enable-checks=SOLID-S/complex-function ./...
 ./solidlint ./internal/analyzer/
 ./solidlint checks list
@@ -149,6 +154,22 @@ vulnerability gates, with each target owned once. Use it before pushing.
 `make check-release` additionally builds the release snapshot and validates the
 published module version from a clean external consumer; it requires
 `SOLIDLINT_VERSION` and release tooling.
+
+To publish binaries after the release commit is clean, pushed to `origin/main`,
+and green in CI, run the guarded release script with the next immutable semantic
+version:
+
+```sh
+make publish VERSION=v0.2.0
+```
+
+The script verifies the branch, clean working tree, remote commit, unused tag,
+and documented version; runs `make check-release` against the public commit;
+then asks before creating and pushing the annotated tag. The tag starts the
+GitHub Release workflow. Preview the operation without checks or mutations with
+`make publish VERSION=v0.2.0 PUBLISH_FLAGS=--dry-run`. Use
+`PUBLISH_FLAGS="--yes --skip-checks"` only when automating a release whose exact
+qualification has already passed for the current commit.
 
 Keep report-only scans separate from enforcement. In this repository,
 `make report` and `make enforce` scan `./internal/analyzer/...` so the tool
@@ -308,6 +329,9 @@ zero-config composition roots that wire at least five concrete collaborators
 most two concrete struct dependencies and three relevant fields. Same-package
 concrete types, `*Config` data bags, and behaviorless structs from domain
 packages are ignored; cross-package concrete behavior dependencies still flag.
+In test fakes, domain entities and serialized DTOs kept only as returned or
+asserted state are likewise ignored unless their methods are invoked or they
+are passed into a constructor as collaborators.
 Vendor or intentional concrete types can be allowlisted with
 `dip.allow_dependencies` or baselined. Standard-library concrete types (for example
 `*net.UDPConn`) are ignored when type information is available. `large-type`
@@ -411,7 +435,7 @@ linters:
 ```
 
 The plugins expose exactly the nine SRP checks, `SOLID-L/non-exact-eof`, all
-three ISP checks, and `SOLID-D/concrete-dependency`. Every OCP check,
+five ISP checks, and `SOLID-D/concrete-dependency`. Every OCP check,
 `SOLID-L/nil-embedded-interface`, and the other five DIP checks remain CLI-only
 program correlations. Plugins do not load baselines or CLI architecture
 configuration. Use the CLI for those policies and for whole-program checks.

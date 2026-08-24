@@ -77,8 +77,8 @@ func (raw yamlFileConfig) validate(path string, doc *yaml.Node) error {
 }
 
 func (raw yamlFileConfig) validateSemantic(path string, doc *yaml.Node) error {
-	if raw.Profile != "" && Profile(raw.Profile) != ProfileStable && Profile(raw.Profile) != ProfileAll {
-		return semanticConfigError(path, doc, []string{"profile"}, "profile must be stable or all", "")
+	if raw.Profile != "" && Profile(raw.Profile) != ProfileStable && Profile(raw.Profile) != ProfileAll && Profile(raw.Profile) != ProfileCalibration {
+		return semanticConfigError(path, doc, []string{"profile"}, "profile must be stable, all, or calibration", "")
 	}
 	for _, rule := range raw.EnabledRules {
 		if !validRuleCode(rule) {

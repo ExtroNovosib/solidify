@@ -29,7 +29,7 @@ func parseCheckOptions(args []string) (checkOptions, error) {
 	fs := flag.NewFlagSet("solidlint", flag.ContinueOnError)
 	var options checkOptions
 	fs.StringVar(&options.rules, "rules", "S,O,L,I,D", "comma-separated list of rules to run (S,O,L,I,D)")
-	fs.StringVar(&options.profile, "profile", string(analyzer.ProfileStable), "check profile: stable|all")
+	fs.StringVar(&options.profile, "profile", string(analyzer.ProfileStable), "check profile: stable|all|calibration")
 	fs.StringVar(&options.enabledChecks, "enable-checks", "", "comma-separated concrete check IDs to enable")
 	fs.StringVar(&options.format, "format", "text", "output format: text|json|sarif")
 	fs.StringVar(&options.analysis, "analysis", "auto", "analysis mode: auto|syntax|types")
@@ -85,8 +85,8 @@ func (options checkOptions) validate() error {
 	if options.analysis != "auto" && options.analysis != "syntax" && options.analysis != "types" {
 		return fmt.Errorf("unknown analysis mode %q (expected auto, syntax, or types)", options.analysis)
 	}
-	if options.profile != string(analyzer.ProfileStable) && options.profile != string(analyzer.ProfileAll) {
-		return fmt.Errorf("unknown profile %q (expected stable or all)", options.profile)
+	if options.profile != string(analyzer.ProfileStable) && options.profile != string(analyzer.ProfileAll) && options.profile != string(analyzer.ProfileCalibration) {
+		return fmt.Errorf("unknown profile %q (expected stable, all, or calibration)", options.profile)
 	}
 	if !validFailLevel(options.failLevel) {
 		return fmt.Errorf("unknown fail level %q (expected note, warning, or error)", options.failLevel)

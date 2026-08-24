@@ -199,9 +199,12 @@ func expressionType(info *types.Info, expr ast.Expr) types.Type {
 	return info.TypeOf(expr)
 }
 
-func dispatchSourceKey(pkg *packageFiles, file *ast.File, source types.Type, expr ast.Expr) string {
-	if source != nil {
+func dispatchSourceKey(pkg *packageFiles, file *ast.File, source types.Type, expr ast.Expr, isolateDynamic bool) string {
+	if source != nil && (!isolateDynamic || !anonymousEmptyInterface(source)) {
 		return canonicalTypeKey(source)
+	}
+	if source != nil {
+		return dynamicDispatchSourceKey(pkg, expr)
 	}
 	ident, ok := unparenOCP(expr).(*ast.Ident)
 	if !ok {
@@ -214,6 +217,43 @@ func dispatchSourceKey(pkg *packageFiles, file *ast.File, source types.Type, exp
 		return syntaxBindingKey(pkg, ident.Obj.Pos())
 	}
 	return syntaxBindingKey(pkg, ident.Pos())
+}
+
+// anonymousEmptyInterface identifies unbounded dynamic values such as any and
+// interface{}. Their static type does not establish one semantic variant
+// family, so each lexical source must be correlated independently.
+func anonymousEmptyInterface(t types.Type) bool {
+	t = types.Unalias(t)
+	if _, named := t.(*types.Named); named {
+		return false
+	}
+	iface, ok := t.Underlying().(*types.Interface)
+	return ok && iface.NumMethods() == 0 && iface.NumEmbeddeds() == 0
+}
+
+func dynamicDispatchSourceKey(pkg *packageFiles, expr ast.Expr) string {
+	expr = unparenOCP(expr)
+	switch current := expr.(type) {
+	case *ast.Ident:
+		if pkg != nil && pkg.info != nil {
+			if object := pkg.info.Uses[current]; object != nil {
+				return "dynamic-source:" + syntaxBindingKey(pkg, object.Pos())
+			}
+		}
+		if current.Obj != nil {
+			return "dynamic-source:" + syntaxBindingKey(pkg, current.Obj.Pos())
+		}
+	case *ast.SelectorExpr:
+		if pkg != nil && pkg.info != nil {
+			if object := selectionObject(pkg.info, current); object != nil {
+				return "dynamic-source:" + syntaxBindingKey(pkg, object.Pos())
+			}
+		}
+	}
+	// Expressions such as JSON map lookups are open-ended values but are not
+	// one shared dispatch family. Binding them to their source site prevents
+	// unrelated shape assertions from being correlated across the program.
+	return "dynamic-source:" + syntaxBindingKey(pkg, expr.Pos())
 }
 
 func unparenOCP(expr ast.Expr) ast.Expr {
