@@ -32,7 +32,7 @@ module-wide OCP correlation; all checks remain explicitly heuristic.
 and CI automation so upgrades remain deliberate:
 
 ```sh
-go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.1.0
+go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.2.0
 solidlint -version
 solidlint -fail=false ./...
 ```
@@ -48,7 +48,7 @@ For GitHub Actions, keep installation and enforcement explicit:
 - uses: actions/setup-go@v7
   with:
     go-version: "1.25.x"
-- run: go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.1.0
+- run: go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.2.0
 - run: solidlint ./...
 ```
 
@@ -155,21 +155,25 @@ vulnerability gates, with each target owned once. Use it before pushing.
 published module version from a clean external consumer; it requires
 `SOLIDLINT_VERSION` and release tooling.
 
-To publish binaries after the release commit is clean, pushed to `origin/main`,
-and green in CI, run the guarded release script with the next immutable semantic
-version:
+To prepare and publish a release end to end, run the guarded publisher with the
+next immutable semantic version:
 
 ```sh
 make publish VERSION=v0.2.0
 ```
 
-The script verifies the branch, clean working tree, remote commit, unused tag,
-and documented version; runs `make check-release` against the public commit;
-then asks before creating and pushing the annotated tag. The tag starts the
-GitHub Release workflow. Preview the operation without checks or mutations with
+The script verifies the branch and remote history, updates README release pins,
+shows the complete change set, and asks once before proceeding. It runs the full
+local gate and a GoReleaser snapshot, stages and commits all current changes,
+pushes `main`, validates that exact public commit from a clean external consumer,
+then creates and pushes the annotated tag. The tag starts the GitHub Release
+workflow. Preview every operation without modifying anything with
 `make publish VERSION=v0.2.0 PUBLISH_FLAGS=--dry-run`. Use
-`PUBLISH_FLAGS="--yes --skip-checks"` only when automating a release whose exact
-qualification has already passed for the current commit.
+`PUBLISH_FLAGS="--yes --skip-checks"` only when automating a release whose local
+and external-consumer qualification already passed for the exact content.
+When GoReleaser is not installed globally and `GORELEASER` is not set, the
+publisher installs the pinned open-source GoReleaser v2.17.1 executable into the
+ignored `.cache/release-tools` directory automatically.
 
 Keep report-only scans separate from enforcement. In this repository,
 `make report` and `make enforce` scan `./internal/analyzer/...` so the tool
@@ -373,7 +377,7 @@ destination: ./.bin
 plugins:
   - module: github.com/ExtroNovosib/solidify
     import: github.com/ExtroNovosib/solidify/plugin/solidlint
-    version: v0.1.0
+    version: v0.2.0
 ```
 
 Enable the module plugin in `.golangci.yml`:
