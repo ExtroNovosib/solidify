@@ -4,6 +4,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -21,6 +22,9 @@ type BuildInfo struct {
 // Run dispatches explicit commands while preserving the v0.1 leading-flag and
 // path-only invocation as an implicit check command.
 func Run(args []string, build BuildInfo) int {
+	if len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+		return runTopLevelHelp()
+	}
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return runCheckCommand(args, build)
 	}
@@ -38,6 +42,25 @@ func Run(args []string, build BuildInfo) int {
 	default:
 		return runCheckCommand(args, build)
 	}
+}
+
+func runTopLevelHelp() int {
+	_, _ = fmt.Fprintln(os.Stderr, "solidlint checks Go source for heuristic SOLID design smells.")
+	_, _ = fmt.Fprintln(os.Stderr, "\nUsage: solidlint [check] [flags] <path> [<path> ...]")
+	_, _ = fmt.Fprintln(os.Stderr, "       solidlint <command> [arguments]")
+	_, _ = fmt.Fprintln(os.Stderr, "\nCommands:")
+	_, _ = fmt.Fprintln(os.Stderr, "  check      analyze one or more packages; this is also the default command")
+	_, _ = fmt.Fprintln(os.Stderr, "  checks     list checks or explain one check")
+	_, _ = fmt.Fprintln(os.Stderr, "  config     initialize, validate, or print the configuration schema")
+	_, _ = fmt.Fprintln(os.Stderr, "  baseline   initialize, update, diff, or prune accepted findings")
+	_, _ = fmt.Fprintln(os.Stderr, "  stats      report selected checks, cache activity, and analysis coverage")
+	_, _ = fmt.Fprintln(os.Stderr, "  help       show this command overview")
+	_, _ = fmt.Fprintln(os.Stderr, "\nExamples:")
+	_, _ = fmt.Fprintln(os.Stderr, "  solidlint check ./...")
+	_, _ = fmt.Fprintln(os.Stderr, "  solidlint checks explain SOLID-I/fat-interface -format=json")
+	_, _ = fmt.Fprintln(os.Stderr, "  solidlint stats -format=json ./...")
+	_, _ = fmt.Fprintln(os.Stderr, "\nRun `solidlint check --help` for analyzer flags.")
+	return 0
 }
 
 func validFailLevel(level string) bool {

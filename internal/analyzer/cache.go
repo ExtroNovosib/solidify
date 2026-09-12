@@ -17,7 +17,7 @@ import (
 
 // Bump the version when cache-key semantics change so entries produced by an
 // older solidlint cannot be reused with the new analyzer.
-const cacheVersion = "solidlint-cache-v8"
+const cacheVersion = "solidlint-cache-v9"
 
 type packageCache struct {
 	root        string
@@ -295,10 +295,35 @@ func (c *packageCache) dependencyAPIDigest(pkg *packageFiles) string {
 			h.Write([]byte{'='})
 			if object != nil {
 				h.Write([]byte(types.ObjectString(object, func(owner *types.Package) string { return owner.Path() })))
+				writeNamedTypeMethodSets(h, object)
 			}
 			h.Write([]byte{0})
 		}
 	}
 	h.Write([]byte(pkg.dependencyFacts))
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// writeNamedTypeMethodSets includes both method sets because ObjectString for a
+// type declaration deliberately omits methods. A method-only change in a
+// dependency can otherwise leave a package cache entry valid even when a typed
+// check, such as concrete-dependency, reaches a different conclusion.
+func writeNamedTypeMethodSets(h interface{ Write([]byte) (int, error) }, object types.Object) {
+	typeName, ok := object.(*types.TypeName)
+	if !ok {
+		return
+	}
+	named, ok := types.Unalias(typeName.Type()).(*types.Named)
+	if !ok {
+		return
+	}
+	for _, candidate := range []types.Type{named, types.NewPointer(named)} {
+		methods := types.NewMethodSet(candidate)
+		for index := 0; index < methods.Len(); index++ {
+			selection := methods.At(index)
+			_, _ = h.Write([]byte(types.ObjectString(selection.Obj(), func(owner *types.Package) string { return owner.Path() })))
+			_, _ = h.Write([]byte{0})
+		}
+		_, _ = h.Write([]byte{0})
+	}
 }

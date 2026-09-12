@@ -1,0 +1,21 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "DOD-1",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "GOCACHE=$PWD/.cache/go-build make check",
+        "summary": "canonical validation passed cache parity, partial-type handling, baseline and CLI package/integration paths, plugin contracts, precision, smoke, race, schema, and security checks",
+                "source_fingerprint": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae"
+      }
+    }
+  ],
+  "source_fingerprints": {
+        "Makefile": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae",
+        "internal/analyzer/workspace.go": "sha256:4b214af3f4ae0c7207241e5a8d73d90f9761f933b5d7de91f20492e5434ad623",
+    "internal/baseline/baseline.go": "sha256:3dec56aaf8d82a92d35aa5ec6cc7f8f2209d9e65a8468fda3d9bef0e840dd620",
+        "internal/cli/commands.go": "sha256:f64f52c6725260a5f988218d46c49e6573d0a199115d9532f69979095df837cf"
+  }
+}

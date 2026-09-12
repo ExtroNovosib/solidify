@@ -59,10 +59,10 @@ type Service struct { driver Driver }
 	}
 }
 
-func TestRun_CacheInvalidatesWhenImportedTypeChanges(t *testing.T) {
+func TestRun_CacheInvalidatesWhenImportedMethodSetChanges(t *testing.T) {
 	dir := t.TempDir()
 	initTempModule(t, dir)
-	depDir := filepath.Join(dir, "dep")
+	depDir := filepath.Join(dir, "domain")
 	consumerDir := filepath.Join(dir, "consumer")
 	for _, path := range []string{depDir, consumerDir} {
 		if err := os.MkdirAll(path, 0o755); err != nil {
@@ -70,14 +70,14 @@ func TestRun_CacheInvalidatesWhenImportedTypeChanges(t *testing.T) {
 		}
 	}
 	depPath := filepath.Join(depDir, "dep.go")
-	if err := os.WriteFile(depPath, []byte("package dep\n\ntype Dependency struct{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(depPath, []byte("package domain\n\ntype Dependency struct{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(consumerDir, "consumer.go"), []byte(`package consumer
 
-import "tempmod/dep"
+import "tempmod/domain"
 
-type Service struct { dependency *dep.Dependency }
+type Service struct { dependency *domain.Dependency }
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -89,19 +89,19 @@ type Service struct { dependency *dep.Dependency }
 	if err != nil {
 		t.Fatal(err)
 	}
-	if issues := Run(pkgs, cfg, enabled); len(issues) != 1 {
-		t.Fatalf("concrete imported dependency = %v, want one finding", issues)
+	if issues := Run(pkgs, cfg, enabled); len(issues) != 0 {
+		t.Fatalf("method-free imported value object = %v, want no findings", issues)
 	}
 
-	if writeErr := os.WriteFile(depPath, []byte("package dep\n\ntype Dependency interface { Run() }\n"), 0o644); writeErr != nil {
+	if writeErr := os.WriteFile(depPath, []byte("package domain\n\ntype Dependency struct{}\n\nfunc (*Dependency) Run() {}\n"), 0o644); writeErr != nil {
 		t.Fatal(writeErr)
 	}
 	pkgs, _, err = LoadWorkspace([]string{consumerDir}, false, "types")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if issues := Run(pkgs, cfg, enabled); len(issues) != 0 {
-		t.Fatalf("dependency-only change reused stale cache: %v", issues)
+	if issues := Run(pkgs, cfg, enabled); len(issues) != 1 {
+		t.Fatalf("dependency-only method change reused stale cache: %v", issues)
 	}
 }
 

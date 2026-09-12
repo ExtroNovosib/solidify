@@ -2,10 +2,12 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/ExtroNovosib/solidify/internal/analyzer"
 	baselinepkg "github.com/ExtroNovosib/solidify/internal/baseline"
@@ -15,10 +17,13 @@ import (
 func runCheckCommand(args []string, build BuildInfo) int {
 	options, err := parseCheckOptions(args)
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	if options.showVersion {
-		fmt.Fprintln(os.Stdout, build.Version)
+		_, _ = fmt.Fprintln(os.Stdout, build.Version)
 		return 0
 	}
 	policy, err := resolveCheckPolicy(options, build)
@@ -27,8 +32,8 @@ func runCheckCommand(args []string, build BuildInfo) int {
 		return 2
 	}
 	if options.printConfig {
-		if err := renderEffectiveConfig(policy); err != nil && !isBrokenPipe(err) {
-			fmt.Fprintln(os.Stderr, "solidlint:", err)
+		if renderErr := renderEffectiveConfig(policy); renderErr != nil && !isBrokenPipe(renderErr) {
+			fmt.Fprintln(os.Stderr, "solidlint:", renderErr)
 			return 2
 		}
 		return 0
@@ -70,10 +75,17 @@ func applyLegacyBaselineOptions(policy checkPolicy, result *analysisResult) int 
 	if options.baselinePath == "" {
 		return -1
 	}
-	accepted, _, err := readBaselineInfo(options.baselinePath)
+	baselineResult, err := baselinepkg.ReadAt(options.baselinePath, time.Now().UTC())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "solidlint:", err)
 		return 2
+	}
+	accepted := baselineResult.Accepted
+	if len(baselineResult.Expired) > 0 {
+		fmt.Fprintf(os.Stderr, "solidlint: baseline contains %d expired entry(s); expired entries no longer suppress findings\n", len(baselineResult.Expired))
+		if options.baselineExpired == "error" {
+			return 1
+		}
 	}
 	if stale := staleBaseline(accepted, result.issues); len(stale) > 0 {
 		if options.baselineStale != "ignore" {
@@ -90,6 +102,9 @@ func applyLegacyBaselineOptions(policy checkPolicy, result *analysisResult) int 
 func runStatsCommand(args []string, build BuildInfo) int {
 	options, err := parseCheckOptions(args)
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		return 2
 	}
 	if options.format == "sarif" {
@@ -114,15 +129,20 @@ func runStatsCommand(args []string, build BuildInfo) int {
 }
 
 type checkDescription struct {
-	ID          analyzer.CheckID       `json:"id"`
-	Name        string                 `json:"name"`
-	Rule        analyzer.Rule          `json:"rule"`
-	Scope       string                 `json:"scope"`
-	Maturity    analyzer.Maturity      `json:"maturity"`
-	Syntax      analyzer.SyntaxSupport `json:"syntaxSupport"`
-	RunnerGroup string                 `json:"runnerGroup"`
-	Description string                 `json:"description"`
-	HelpURI     string                 `json:"helpUri"`
+	ID            analyzer.CheckID       `json:"id"`
+	Name          string                 `json:"name"`
+	Rule          analyzer.Rule          `json:"rule"`
+	Scope         string                 `json:"scope"`
+	Maturity      analyzer.Maturity      `json:"maturity"`
+	Syntax        analyzer.SyntaxSupport `json:"syntaxSupport"`
+	RunnerGroup   string                 `json:"runnerGroup"`
+	Description   string                 `json:"description"`
+	Configuration []string               `json:"configuration"`
+	Remediation   string                 `json:"remediation"`
+	ExampleBefore string                 `json:"exampleBefore"`
+	ExampleAfter  string                 `json:"exampleAfter"`
+	Exception     string                 `json:"exception"`
+	HelpURI       string                 `json:"helpUri"`
 }
 
 func runChecksCommand(args []string) int {
@@ -162,7 +182,7 @@ func runChecksCommand(args []string) int {
 		if format == "json" {
 			return encodeCommandJSON(item)
 		}
-		fmt.Printf("%s — %s\n%s\nprofile: %s; scope: %s; syntax: %s\n%s\n", item.ID, item.Name, item.Description, item.Maturity, item.Scope, item.Syntax, item.HelpURI)
+		fmt.Printf("%s — %s\n%s\nprofile: %s; scope: %s; syntax: %s\nconfiguration: %s\nremediation: %s\nexample before: %s\nexample after: %s\nlegitimate exception: %s\n%s\n", item.ID, item.Name, item.Description, item.Maturity, item.Scope, item.Syntax, strings.Join(item.Configuration, ", "), item.Remediation, item.ExampleBefore, item.ExampleAfter, item.Exception, item.HelpURI)
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "solidlint: unknown checks command %q\n", args[0])
@@ -184,7 +204,81 @@ func describeCheck(metadata analyzer.Check) checkDescription {
 	if metadata.Scope == analyzer.ScopeProgram {
 		scope = "program"
 	}
-	return checkDescription{metadata.ID, metadata.Name, metadata.Rule, scope, metadata.Maturity, metadata.Syntax, metadata.RunnerGroup, metadata.Doc, metadata.HelpURI}
+	guidance := checkGuidance(metadata)
+	return checkDescription{
+		ID: metadata.ID, Name: metadata.Name, Rule: metadata.Rule, Scope: scope,
+		Maturity: metadata.Maturity, Syntax: metadata.Syntax, RunnerGroup: metadata.RunnerGroup,
+		Description: metadata.Doc, Configuration: guidance.configuration, Remediation: guidance.remediation,
+		ExampleBefore: guidance.before, ExampleAfter: guidance.after, Exception: guidance.exception,
+		HelpURI: metadata.HelpURI,
+	}
+}
+
+type guidance struct {
+	configuration []string
+	remediation   string
+	before        string
+	after         string
+	exception     string
+}
+
+func checkGuidance(metadata analyzer.Check) guidance {
+	result := guidance{
+		configuration: []string{"disabled_checks", "severities." + string(metadata.ID)},
+		remediation:   "Review the reported evidence in context; use a reason-bearing suppression or baseline only for reviewed intentional debt.",
+	}
+	switch metadata.Rule {
+	case analyzer.RuleSRP:
+		result.before = "type AccountService struct { store Store; mailer Mailer }; func (s *AccountService) Save() {}; func (s *AccountService) Send() {}"
+		result.after = "type AccountStore struct { store Store }; type AccountNotifier struct { mailer Mailer }"
+		result.exception = "Generated records and framework-owned DTOs can be broad when their external schema owns the shape."
+	case analyzer.RuleOCP:
+		result.before = "switch value.(type) { case CSV: encodeCSV(value); case JSON: encodeJSON(value) }"
+		result.after = "type Encoder interface { Encode() []byte }; func send(value Encoder) { _ = value.Encode() }"
+		result.exception = "A closed protocol decoder or short-lived compatibility shim may intentionally enumerate a finite set."
+	case analyzer.RuleLSP:
+		result.before = "return 0, fmt.Errorf(\"EOF: %w\", io.EOF)"
+		result.after = "return 0, io.EOF"
+		result.exception = "An adapter may normalize behavior only when its public contract explicitly documents the changed substitution semantics."
+	case analyzer.RuleISP:
+		result.before = "type Repository interface { Read(); Write(); Delete() }"
+		result.after = "type Reader interface { Read() }; func load(repo Reader) { repo.Read() }"
+		result.exception = "A framework facade or migration adapter may deliberately aggregate capabilities after its actual consumers are reviewed."
+	case analyzer.RuleDIP:
+		result.before = "type Service struct { client *PostgresClient }"
+		result.after = "type Store interface { Save() error }; type Service struct { store Store }"
+		result.exception = "A declared composition root must wire concrete implementations and can intentionally depend on infrastructure."
+	}
+	checkGuidanceByID(metadata.ID, &result)
+	return result
+}
+
+func addConfiguration(result *guidance, keys ...string) {
+	result.configuration = append(result.configuration, keys...)
+}
+
+func checkGuidanceByID(id analyzer.CheckID, result *guidance) {
+	//nolint:exhaustive // Other registered check IDs intentionally retain the generic guidance above.
+	switch id {
+	case analyzer.CheckSRPLargeType:
+		addConfiguration(result, "thresholds.max_methods", "thresholds.max_fields", "thresholds.max_type_lines", "thresholds.max_exported_methods", "thresholds.max_type_complexity", "thresholds.min_large_type_signals")
+		result.remediation = "Split unrelated responsibilities into cohesive collaborators after confirming the type changes for independent reasons."
+	case analyzer.CheckSRPDataClump, analyzer.CheckSRPMixedInputSurface:
+		addConfiguration(result, "thresholds.max_params")
+		result.remediation = "Group values that share validation or lifecycle into a parameter object; retain cohesive homogeneous APIs."
+	case analyzer.CheckOCPTypeDispatch:
+		addConfiguration(result, "thresholds.max_switch_cases")
+		result.remediation = "Move variant behavior behind an interface when extension is expected; keep closed protocol boundaries explicit."
+	case analyzer.CheckISPFatInterface:
+		addConfiguration(result, "thresholds.max_interface_methods")
+		result.remediation = "Split the interface into consumer-owned roles when callers need distinct capabilities."
+	case analyzer.CheckISPUsageRatio:
+		addConfiguration(result, "thresholds.isp_min_methods", "thresholds.isp_usage_ratio_percent")
+		result.remediation = "Depend on the smallest role the consumer actually uses, unless the broader contract is intentional."
+	default:
+		// The generic guidance above covers registered checks without a
+		// dedicated threshold or remediation pattern.
+	}
 }
 
 func parseMetadataFormat(args []string) (string, bool) {
@@ -227,7 +321,7 @@ func runConfigCommand(args []string) int {
 			fmt.Fprintln(os.Stderr, "solidlint:", err)
 			return 2
 		}
-		fmt.Fprintln(os.Stdout, path+": valid")
+		_, _ = fmt.Fprintln(os.Stdout, path+": valid")
 		return 0
 	case "schema":
 		if len(args) > 2 || len(args) == 2 && args[1] != "-format=json" {
@@ -276,12 +370,12 @@ func runBaselineCommand(args []string, build BuildInfo) int {
 	}
 	annotation := baselinepkg.Annotation{Reason: options.baselineReason, Owner: options.baselineOwner, Expires: options.baselineExpires}
 	if operation == "init" {
-		document, diff, err := baselinepkg.Update(baselinepkg.Document{Version: baselinepkg.Version}, result.issues, annotation, true)
-		if err != nil {
-			return baselineCommandError(err)
+		document, diff, updateErr := baselinepkg.Update(baselinepkg.Document{Version: baselinepkg.Version}, result.issues, annotation, true)
+		if updateErr != nil {
+			return baselineCommandError(updateErr)
 		}
-		if err := baselinepkg.WriteDocument(options.baselinePath, document); err != nil {
-			return baselineCommandError(err)
+		if writeErr := baselinepkg.WriteDocument(options.baselinePath, document); writeErr != nil {
+			return baselineCommandError(writeErr)
 		}
 		return renderBaselineDiff(diff, options.format, false)
 	}

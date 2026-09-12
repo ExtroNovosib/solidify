@@ -35,7 +35,7 @@ func checkSRPWithTypes(in SRPCheckInput) []Issue {
 		issues = append(issues, filterSelectedIssues(typedParameterIssues(in.Fset, in.Files, in.Info, in.Config, in.PkgFiles), in.Config)...)
 	}
 	profileChecks := checkEnabled(in.Config, CheckSRPLargeType) || checkEnabled(in.Config, CheckSRPGodType) || checkEnabled(in.Config, CheckSRPHighFanOutType) || checkEnabled(in.Config, CheckSRPMixedImportClusters) || checkEnabled(in.Config, CheckSRPLowCohesionType)
-	if !profileChecks {
+	if !profileChecks || !in.TypeComplete || in.Info == nil || in.Pkg == nil {
 		return issues
 	}
 	profiles := buildSRPTypeProfiles(in.Fset, in.Files, in.Info, in.Pkg, in.PkgFiles)

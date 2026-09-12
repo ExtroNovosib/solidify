@@ -1,0 +1,20 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "AC-S3-1",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/baseline ./internal/cli ./tests/integration -run 'Test.*ExpiredBaseline|TestExpiredEntryPolicy' -count=1",
+        "summary": "deterministic UTC expiry, legacy readability, warn/error policies, and the expired baseline workflow passed; expired entries no longer filter findings",
+        "source_fingerprint": "sha256:4327ee9af3c45f8d401fada1789ea5446a9d36038fbf37d6307dad61209faedf"
+      }
+    }
+  ],
+  "source_fingerprints": {
+    "internal/baseline/baseline.go": "sha256:4327ee9af3c45f8d401fada1789ea5446a9d36038fbf37d6307dad61209faedf",
+    "internal/cli/commands.go": "sha256:e9c6f081c55dda82ac1e1cf590a4c486da0f3bbf28d90325f22d62da7caf777c",
+    "tests/integration/cli_workflow_test.go": "sha256:273806f62077eacbf18128c29bcf97741d4dee6f3b2a2e0a60ef0371b9cd2a2d"
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "revision": "stable-v0.2-r1",
+  "revision": "stable-v0.2-r2",
   "cases": [
     {
       "key": "stable-large-type",
@@ -112,6 +112,65 @@
       },
       "rationale": "A constructor accepts a behavioral concrete type from another package; the negative dependency is same-package and intentionally ignored.",
       "documentation": "docs/checks/SOLID-D/concrete-dependency.md"
+    }
+  ],
+  "edgeStyles": [
+    {
+      "key": "edge-embedded-interface",
+      "style": "embedding",
+      "root": "testdata/evaluation/edges/embedding",
+      "expected": [
+        {
+          "checkId": "SOLID-I/fat-interface",
+          "path": "testdata/evaluation/edges/embedding/embedding.go",
+          "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/edges/embedding.Aggregate"
+        }
+      ],
+      "observedFalsePositives": 0,
+      "observedFalseNegatives": 0,
+      "rationale": "Two focused embedded roles combine into a nine-method aggregate, which remains a deliberate interface-width finding."
+    },
+    {
+      "key": "edge-generic-interface",
+      "style": "generics",
+      "root": "testdata/evaluation/edges/generics",
+      "expected": [
+        {
+          "checkId": "SOLID-I/fat-interface",
+          "path": "testdata/evaluation/edges/generics/generics.go",
+          "subject": "github.com/ExtroNovosib/solidify/testdata/evaluation/edges/generics.Repository"
+        }
+      ],
+      "observedFalsePositives": 0,
+      "observedFalseNegatives": 0,
+      "rationale": "A generic parameter must not hide the nine explicit interface methods from width accounting."
+    },
+    {
+      "key": "edge-adapter-boundary",
+      "style": "adapter",
+      "root": "testdata/evaluation/edges/adapters",
+      "expected": [],
+      "observedFalsePositives": 0,
+      "observedFalseNegatives": 0,
+      "rationale": "A small external-boundary adapter with one client capability is intentionally quiet."
+    },
+    {
+      "key": "edge-generated-source",
+      "style": "generated",
+      "root": "testdata/evaluation/edges/generated",
+      "expected": [],
+      "observedFalsePositives": 0,
+      "observedFalseNegatives": 0,
+      "rationale": "A generated wide interface is outside source ownership and remains excluded from findings."
+    },
+    {
+      "key": "edge-platform-specific-source",
+      "style": "platform-specific",
+      "root": "testdata/evaluation/edges/platform",
+      "expected": [],
+      "observedFalsePositives": 0,
+      "observedFalseNegatives": 0,
+      "rationale": "The fixture loads the host-selected build-tag file beside a shared package without producing a finding."
     }
   ]
 }

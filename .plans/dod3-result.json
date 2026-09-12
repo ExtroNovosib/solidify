@@ -1,0 +1,20 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "DOD-3",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "git status --short && git diff --check && git diff -- go.mod go.sum",
+        "summary": "diff check is clean, go.mod and go.sum have no diff, and all tracked changes are plan-owned analyzer, baseline, CLI, quality-gate, plugin, documentation, or direct quality-support paths",
+                "source_fingerprint": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae"
+      }
+    }
+  ],
+  "source_fingerprints": {
+        "Makefile": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae",
+        "internal/analyzer/workspace.go": "sha256:4b214af3f4ae0c7207241e5a8d73d90f9761f933b5d7de91f20492e5434ad623",
+        "README.md": "sha256:7c5bd08ba5ab3aeda1789fb0d5901157f6db96558caa5357899be45e5eefe8d5"
+  }
+}

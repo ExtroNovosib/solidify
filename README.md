@@ -32,7 +32,7 @@ module-wide OCP correlation; all checks remain explicitly heuristic.
 and CI automation so upgrades remain deliberate:
 
 ```sh
-go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.2.0
+go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.3.0
 solidlint -version
 solidlint -fail=false ./...
 ```
@@ -48,7 +48,7 @@ For GitHub Actions, keep installation and enforcement explicit:
 - uses: actions/setup-go@v7
   with:
     go-version: "1.25.x"
-- run: go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.2.0
+- run: go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.3.0
 - run: solidlint ./...
 ```
 
@@ -66,6 +66,7 @@ go build -o solidlint ./cmd/solidlint
 ./solidlint check -profile=calibration -config testdata/calibration/reference-backend.yml -fail=false /path/to/backend/internal
 ./solidlint -enable-checks=SOLID-S/complex-function ./...
 ./solidlint ./internal/analyzer/
+./solidlint --help
 ./solidlint checks list
 ./solidlint checks explain SOLID-I/fat-interface
 ./solidlint config init > .solidify.yml
@@ -144,7 +145,7 @@ Local development has explicit short, full, and release tiers:
 ```sh
 make check-fast
 make check
-SOLIDLINT_VERSION=v0.2.0 make check-release
+SOLIDLINT_VERSION=v0.3.0 make check-release
 ```
 
 `make check-fast` runs formatting, `go vet`, unit tests, integration tests, and
@@ -159,7 +160,7 @@ To prepare and publish a release end to end, run the guarded publisher with the
 next immutable semantic version:
 
 ```sh
-make publish VERSION=v0.2.0
+make publish VERSION=v0.3.0
 ```
 
 The script verifies the branch and remote history, updates README release pins,
@@ -168,7 +169,7 @@ local gate and a GoReleaser snapshot, stages and commits all current changes,
 pushes `main`, validates that exact public commit from a clean external consumer,
 then creates and pushes the annotated tag. The tag starts the GitHub Release
 workflow. Preview every operation without modifying anything with
-`make publish VERSION=v0.2.0 PUBLISH_FLAGS=--dry-run`. Use
+`make publish VERSION=v0.3.0 PUBLISH_FLAGS=--dry-run`. Use
 `PUBLISH_FLAGS="--yes --skip-checks"` only when automating a release whose local
 and external-consumer qualification already passed for the exact content.
 When GoReleaser is not installed globally and `GORELEASER` is not set, the
@@ -282,18 +283,30 @@ v5 and requires a reason for newly accepted findings. Update preserves live
 annotations and does not remove stale entries unless `-prune` is supplied;
 `baseline prune` is the explicit stale-debt cleanup workflow. The deprecated
 `-write-baseline` compatibility flag remains available but now also requires
-`-baseline-reason`. `-baseline` filters accepted findings as before. Use
+`-baseline-reason`. `-baseline` filters accepted findings as before, except an
+entry expires at the start of the UTC day after its `expires` date and then
+remains live. The default `-baseline-expired=warn` reports that condition;
+`-baseline-expired=error` fails the command. Use
 `-baseline-stale=error` when stale entries should fail a check, or
 `-baseline-stale=ignore` to suppress the notice.
 
 The default package and program-group cache is stored in the platform user
 cache, namespaced by the analysis root. Use `-cache-dir` to relocate it or
 `-cache=false` to disable it. `-cache-debug` prints cache diagnostics to stderr.
-`solidlint stats -format=json` returns structural execution evidence—selected,
-executed, skipped, cache-hit, and cache-miss runner groups—without requiring
-timing-log parsing. `-print-config` prints resolved machine-readable policy
-without loading or analyzing packages; `config schema` emits the strict config
-schema.
+Syntax analysis does not request type, dependency, or export-file metadata.
+For typed analysis, source manifests and filtered type snapshots are rebuilt
+only when generated-file removal or an exclusion actually changes a package;
+otherwise the loader snapshot is reused unchanged.
+`solidlint --help` lists the available commands and common invocations.
+`solidlint checks explain <id>` reports the check's documentation link,
+configuration keys, remediation guidance, a compact before/after example, and
+the kind of legitimate exception that warrants review rather than a blind
+source edit. `solidlint stats -format=json` returns structural execution
+evidence—selected, executed, skipped, cache-hit, cache-miss runner groups,
+per-package type completeness, and one reasoned coverage status for every
+registered check—without requiring timing-log parsing. `-print-config` prints
+resolved machine-readable policy without loading or analyzing packages;
+`config schema` emits the strict config schema.
 
 Architecture package lists are intentionally opt-in. Composition roots are
 excluded from implementation-coupling and DIP layer/wiring/leak findings
@@ -377,7 +390,7 @@ destination: ./.bin
 plugins:
   - module: github.com/ExtroNovosib/solidify
     import: github.com/ExtroNovosib/solidify/plugin/solidlint
-    version: v0.2.0
+    version: v0.3.0
 ```
 
 Enable the module plugin in `.golangci.yml`:

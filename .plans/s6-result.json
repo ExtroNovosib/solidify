@@ -1,0 +1,22 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "S6",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "GOCACHE=$PWD/.cache/go-build make check",
+        "summary": "implemented the final loader/hash reductions, retained selection and filtered-snapshot semantics, documented behavior, repaired broadened first-party lint findings, and passed the canonical aggregate gate",
+        "source_fingerprint": "sha256:71df2125df17bd2465115a806623b060fd72df15a38556daa72e9b337b5f7ca0"
+      }
+    }
+  ],
+  "source_fingerprints": {
+    "internal/analyzer/workspace.go": "sha256:71df2125df17bd2465115a806623b060fd72df15a38556daa72e9b337b5f7ca0",
+    "internal/analyzer/workspace_test.go": "sha256:f209c7cf6666caa0579e68ecc1f1968f60462560e24ee124a80020d52a099012",
+    "internal/analyzer/cache.go": "sha256:f43cd8de308a5d001a6c610d74c81fc933f8a8da5b2e9d6633c38899392d6434",
+    "Makefile": "sha256:2c6172257b34bf1eca0a5fca782b64ebace29c146db421dff7cf6abbc7b00c62",
+    "README.md": "sha256:d3c934973efe83857d357b25688881ad1f37a8c962e0f0e247d4058f004e7941"
+  }
+}

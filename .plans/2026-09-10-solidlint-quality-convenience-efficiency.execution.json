@@ -1,0 +1,465 @@
+{
+  "bundle_revision": "REV-2",
+  "contract_digest": "3910114f6cffc658a886bfa31e74cf7e13a9ba1f817c432418643339515fe6c5",
+  "created_at": "2026-09-09T18:48:39.916317+00:00",
+  "entry_plan": "2026-09-10-solidlint-quality-convenience-efficiency.md",
+  "history": [
+    {
+      "at": "2026-09-09T19:51:27.542682+00:00",
+      "event": "plan_revision_migrated",
+      "revision": "REV-1"
+    },
+    {
+      "at": "2026-09-10T12:38:52.593416+00:00",
+      "event": "plan_revision_migrated",
+      "revision": "REV-2"
+    }
+  ],
+  "runtime": {
+    "profile_overrides": [],
+    "rescue_launches_used": 0,
+    "root_lineage": {}
+  },
+  "schema": "implement-plan/execution-state/v1",
+  "units": {
+    "solidlint-quality": {
+      "discovered_paths": [
+        {
+          "criterion_ids": [
+            "AC-S7-1"
+          ],
+          "path": "internal/analyzer/stats_test.go",
+          "reason": "focused deterministic coverage-reason regression cases",
+          "support_area": "internal/analyzer/*_test.go"
+        },
+        {
+          "criterion_ids": [
+            "AC-S9-1"
+          ],
+          "path": "testdata/evaluation/edges/embedding/embedding.go",
+          "reason": "embedded-interface edge-style fixture",
+          "support_area": "testdata/**"
+        },
+        {
+          "criterion_ids": [
+            "AC-S9-1"
+          ],
+          "path": "testdata/evaluation/edges/generics/generics.go",
+          "reason": "generic-interface edge-style fixture",
+          "support_area": "testdata/**"
+        },
+        {
+          "criterion_ids": [
+            "AC-S9-1"
+          ],
+          "path": "testdata/evaluation/edges/adapters/adapter.go",
+          "reason": "adapter-boundary edge-style fixture",
+          "support_area": "testdata/**"
+        },
+        {
+          "criterion_ids": [
+            "AC-S9-1"
+          ],
+          "path": "testdata/evaluation/edges/generated/generated.go",
+          "reason": "generated-source edge-style fixture",
+          "support_area": "testdata/**"
+        },
+        {
+          "criterion_ids": [
+            "AC-S9-1"
+          ],
+          "path": "testdata/evaluation/edges/platform/common.go",
+          "reason": "shared package for platform-specific edge-style fixture",
+          "support_area": "testdata/**"
+        },
+        {
+          "criterion_ids": [
+            "AC-S9-1"
+          ],
+          "path": "testdata/evaluation/edges/platform/platform_darwin.go",
+          "reason": "darwin platform-specific fixture",
+          "support_area": "testdata/**"
+        },
+        {
+          "criterion_ids": [
+            "AC-S9-1"
+          ],
+          "path": "testdata/evaluation/edges/platform/platform_linux.go",
+          "reason": "linux platform-specific fixture",
+          "support_area": "testdata/**"
+        },
+        {
+          "criterion_ids": [
+            "AC-S9-1"
+          ],
+          "path": "testdata/evaluation/edges/platform/platform_windows.go",
+          "reason": "windows platform-specific fixture",
+          "support_area": "testdata/**"
+        },
+        {
+          "criterion_ids": [
+            "AC-S9-1"
+          ],
+          "path": "testdata/evaluation/edges/platform/platform_other.go",
+          "reason": "fallback platform-specific fixture",
+          "support_area": "testdata/**"
+        }
+      ],
+      "items": {
+        "AC-S1-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/analyzer -run 'TestRun_CacheInvalidatesWhenImported(MethodSet|Type)Changes|Test.*Cache' -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:7a952025d4a11b8bdb75ab2202dfde7f1599621562bf258e0edbb6032121c0f5",
+              "summary": "cache invalidation and cache parity cases passed after hashing value and pointer method sets of imported named types"
+            }
+          ],
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-09T18:53:17.065496+00:00"
+        },
+        "AC-S10-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build make test-ownership-contract && GOCACHE=$PWD/.cache/go-build make check",
+              "kind": "command",
+              "summary": "The ownership contract derives every tests/e2e Test* name, reserves exactly the three dedicated workflows, prevents ordinary tests from being excluded, and confirms every expensive owner appears once in the canonical aggregate; the exact aggregate passed."
+            }
+          ],
+          "invalidated_by": null,
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:30:58.293067+00:00"
+        },
+        "AC-S2-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./tests/e2e -run '^TestAnalysisModesHandleIllTypedSource$' -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:1bfb31886478faf92ccaaa9cfda202a5d16d855d900334a9d8a749053142292b",
+              "summary": "syntax and auto retained the large-type finding for parseable ill-typed input, auto warned and marked the package incomplete in stats, and types exited 2"
+            }
+          ],
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:02:13.452998+00:00"
+        },
+        "AC-S3-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/baseline ./internal/cli ./tests/integration -run 'Test.*ExpiredBaseline|TestExpiredEntryPolicy' -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:4327ee9af3c45f8d401fada1789ea5446a9d36038fbf37d6307dad61209faedf",
+              "summary": "deterministic UTC expiry, legacy readability, warn/error policies, and the expired baseline workflow passed; expired entries no longer filter findings"
+            }
+          ],
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:06:53.876094+00:00"
+        },
+        "AC-S4-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/cli ./tests/e2e -run 'Test.*(Help|ChecksExplain|AnalysisCoverage)' -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:de7800e07f781214d64bd629a8408b561966e31651a085dc3c806f67b6dacf62",
+              "summary": "CLI help exits successfully, checks explain exposes configuration and remediation guidance, and stats exposes sorted package type-completeness coverage"
+            }
+          ],
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:13:44.850830+00:00"
+        },
+        "AC-S5-1": {
+          "evidence": [
+            {
+              "command": "make plugin-go-e2e-contract",
+              "kind": "command",
+              "source_fingerprint": "sha256:2c6172257b34bf1eca0a5fca782b64ebace29c146db421dff7cf6abbc7b00c62",
+              "summary": "portable Makefile contract proof passed: the Linux shared-plugin recipe builds the plugin and pinned host, accepts only the expected violation exit, and asserts the selected diagnostic; vet and golangci-lint now cover all first-party production packages"
+            }
+          ],
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:22:44.287524+00:00"
+        },
+        "AC-S6-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/analyzer -run '^$' -bench '^BenchmarkRunSelected(Warm|Disabled)$' -benchtime=5x -count=1 -benchmem && GOCACHE=$PWD/.cache/go-build go test ./internal/... ./plugin/... ./cmd/... ./tests/integration ./tests/e2e -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:71df2125df17bd2465115a806623b060fd72df15a38556daa72e9b337b5f7ca0",
+              "summary": "removed unused export-file metadata and no-op policy source-manifest/type-rebuild work; post-change benchmark and complete package/E2E parity passed without changing selected-check behavior"
+            }
+          ],
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:42:32.150628+00:00"
+        },
+        "AC-S7-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/analyzer ./internal/cli -run 'Test.*(WorkspaceLoadRequirements|DependencySyntax|AnalysisCoverageReasons)' -count=1",
+              "kind": "command",
+              "summary": "Selected auto-mode checks now choose syntax-only or typed initial-package loading, imported type identities survive without dependency syntax/types-info bodies, and every registered check has one deterministic coverage status and reason."
+            }
+          ],
+          "invalidated_by": null,
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:09:54.888494+00:00"
+        },
+        "AC-S8-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/cli ./tests/e2e -run 'Test.*(TopLevelHelp|ChecksExplainExamples)' -count=1",
+              "kind": "command",
+              "summary": "Top-level help exits successfully with discoverable command usage, while text and JSON check explanations expose configuration, remediation, before/after examples, and legitimate-exception guidance for representative S/O/L/I/D checks and every registry entry."
+            }
+          ],
+          "invalidated_by": null,
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:13:44.606392+00:00"
+        },
+        "AC-S9-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/analyzer -run '^(TestPrecisionCorpus|TestStableEvaluationManifestCoverageAndVerdicts|TestStableEvaluationEdgeStyles)$' -count=1",
+              "kind": "command",
+              "summary": "The stable-v0.2-r2 manifest exercises embedding, generic interfaces, an adapter, generated source, and host-selected platform files, with exact fixture-observed false-positive and false-negative counts asserted for every style."
+            }
+          ],
+          "invalidated_by": null,
+          "kind": "criterion",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:18:27.839316+00:00"
+        },
+        "DOD-1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build make check",
+              "kind": "command",
+              "source_fingerprint": "sha256:2c6172257b34bf1eca0a5fca782b64ebace29c146db421dff7cf6abbc7b00c62",
+              "summary": "canonical validation passed cache parity, partial-type handling, baseline and CLI package/integration paths, plugin contracts, precision, smoke, race, schema, and security checks"
+            },
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build make check",
+              "kind": "command",
+              "source_fingerprint": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae",
+              "summary": "canonical validation passed cache parity, partial-type handling, baseline and CLI package/integration paths, plugin contracts, precision, smoke, race, schema, and security checks"
+            }
+          ],
+          "invalidated_by": "REV-1",
+          "kind": "dod",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:35:23.957959+00:00"
+        },
+        "DOD-2": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build make check",
+              "kind": "command",
+              "source_fingerprint": "sha256:2c6172257b34bf1eca0a5fca782b64ebace29c146db421dff7cf6abbc7b00c62",
+              "summary": "canonical gate passed JSON/SARIF schema checks, cache parity, clean/violation precision fixtures, plugin selection, and version validation while preserving stable report contracts"
+            },
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build make check",
+              "kind": "command",
+              "source_fingerprint": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae",
+              "summary": "canonical gate passed JSON/SARIF schema checks, cache parity, clean/violation precision fixtures, plugin selection, and version validation while preserving stable report contracts"
+            }
+          ],
+          "invalidated_by": "REV-1",
+          "kind": "dod",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:35:24.538648+00:00"
+        },
+        "DOD-3": {
+          "evidence": [
+            {
+              "command": "git status --short && git diff --check && git diff -- go.mod go.sum",
+              "kind": "command",
+              "source_fingerprint": "sha256:2c6172257b34bf1eca0a5fca782b64ebace29c146db421dff7cf6abbc7b00c62",
+              "summary": "diff check is clean, go.mod and go.sum have no diff, and all tracked changes are plan-owned analyzer, baseline, CLI, quality-gate, plugin, documentation, or direct quality-support paths"
+            },
+            {
+              "command": "git status --short && git diff --check && git diff -- go.mod go.sum",
+              "kind": "command",
+              "source_fingerprint": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae",
+              "summary": "diff check is clean, go.mod and go.sum have no diff, and all tracked changes are plan-owned analyzer, baseline, CLI, quality-gate, plugin, documentation, or direct quality-support paths"
+            }
+          ],
+          "invalidated_by": "REV-1",
+          "kind": "dod",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:35:25.142003+00:00"
+        },
+        "S1": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/analyzer -run 'TestRun_CacheInvalidatesWhenImported(MethodSet|Type)Changes|Test.*Cache' -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:7a952025d4a11b8bdb75ab2202dfde7f1599621562bf258e0edbb6032121c0f5",
+              "summary": "implemented cache format v9 and dependency method-set hashing; focused cache suite passed"
+            }
+          ],
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-09T18:53:39.558271+00:00"
+        },
+        "S10": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build make check",
+              "kind": "command",
+              "summary": "Moved race coverage to first-party production and integration packages, made ordinary E2E discovery complete by default, assigned plugin/module/contract workflows exclusive targets, and passed the canonical aggregate."
+            }
+          ],
+          "invalidated_by": null,
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:30:58.293083+00:00"
+        },
+        "S2": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./tests/e2e -run '^TestAnalysisModesHandleIllTypedSource$' -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:1bfb31886478faf92ccaaa9cfda202a5d16d855d900334a9d8a749053142292b",
+              "summary": "implemented separate syntax loader requirements, auto fallback/warnings, strict types failure, package completeness stats, and syntax finding identity"
+            }
+          ],
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:02:44.946146+00:00"
+        },
+        "S3": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/baseline ./internal/cli ./tests/integration -run 'Test.*ExpiredBaseline|TestExpiredEntryPolicy' -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:4327ee9af3c45f8d401fada1789ea5446a9d36038fbf37d6307dad61209faedf",
+              "summary": "implemented central expiry classification with injected dates, strict CLI policy, compatibility behavior, focused tests, and documentation"
+            }
+          ],
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:07:06.649216+00:00"
+        },
+        "S4": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/cli ./tests/e2e -run 'Test.*(Help|ChecksExplain|AnalysisCoverage)' -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:de7800e07f781214d64bd629a8408b561966e31651a085dc3c806f67b6dacf62",
+              "summary": "implemented successful help paths, explainable configuration and remediation metadata, and explicit package analysis coverage in text and JSON stats"
+            }
+          ],
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:13:45.007474+00:00"
+        },
+        "S5": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build make plugin-go-e2e-contract && GOCACHE=$PWD/.cache/go-build go test ./tests/e2e -count=1",
+              "kind": "command",
+              "source_fingerprint": "sha256:2c6172257b34bf1eca0a5fca782b64ebace29c146db421dff7cf6abbc7b00c62",
+              "summary": "implemented single-owner Linux shared-plugin execution, a portable source contract, and complete first-party vet/lint package coverage; contract and full E2E proofs passed"
+            }
+          ],
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:22:44.442987+00:00"
+        },
+        "S6": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build make check",
+              "kind": "command",
+              "source_fingerprint": "sha256:71df2125df17bd2465115a806623b060fd72df15a38556daa72e9b337b5f7ca0",
+              "summary": "implemented the final loader/hash reductions, retained selection and filtered-snapshot semantics, documented behavior, repaired broadened first-party lint findings, and passed the canonical aggregate gate"
+            }
+          ],
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-09T19:42:41.059764+00:00"
+        },
+        "S7": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/analyzer ./internal/cli -run 'Test.*(WorkspaceLoadRequirements|DependencySyntax|AnalysisCoverageReasons)' -count=1",
+              "kind": "command",
+              "summary": "Implemented plan-aware workspace requirements and additive per-check coverage stats with selection, surface, architecture, complete, partial, conservative, and syntax-equivalent explanations."
+            }
+          ],
+          "invalidated_by": null,
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:09:54.888511+00:00"
+        },
+        "S8": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/cli ./tests/e2e -run 'Test.*(TopLevelHelp|ChecksExplainExamples)' -count=1",
+              "kind": "command",
+              "summary": "Implemented top-level command discovery and complete, machine-readable explanation guidance without changing finding output schemas."
+            }
+          ],
+          "invalidated_by": null,
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:13:44.606407+00:00"
+        },
+        "S9": {
+          "evidence": [
+            {
+              "command": "GOCACHE=$PWD/.cache/go-build make precision",
+              "kind": "command",
+              "summary": "Implemented versioned edge-style evaluation accounting and extended the normal precision gate to execute it."
+            }
+          ],
+          "invalidated_by": null,
+          "kind": "subtask",
+          "status": "completed",
+          "updated_at": "2026-09-10T12:18:27.839334+00:00"
+        }
+      },
+      "plan_digest": "ceb592a98caa93386373a55fa64c8dc659ac1c8b00d119416a59101ac136d552",
+      "plan_path": "2026-09-10-solidlint-quality-convenience-efficiency.md",
+      "profile": {
+        "model": "gpt-5.6-terra",
+        "rationale": "The work is bounded to established analyzer, CLI, baseline, plugin, and validation owners, but cache identity, partial type analysis, public CLI behavior, and cross-platform gates interact enough that Terra/high is insufficient.",
+        "reasoning": "xhigh"
+      },
+      "revision": "REV-2",
+      "source_fingerprints": {
+        "Makefile": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae",
+        "README.md": "sha256:7c5bd08ba5ab3aeda1789fb0d5901157f6db96558caa5357899be45e5eefe8d5",
+        "internal/analyzer/cache.go": "sha256:f43cd8de308a5d001a6c610d74c81fc933f8a8da5b2e9d6633c38899392d6434",
+        "internal/analyzer/run.go": "sha256:402ed0caee88541768fd29be2d659c42fbf902e7c2e9a6b2a10ee45b49692d3d",
+        "internal/analyzer/run_test.go": "sha256:0b276b535a6cc4f79551e565be884a618d478e2591002432c608ff572c3c5cc8",
+        "internal/analyzer/srp.go": "sha256:e2a6016b414c51cf49d3f6baf9c0a18dfc6a8962bf2c34772841de6388189a1a",
+        "internal/analyzer/srp_metrics.go": "sha256:69e17f73c91501a582165ce0c728488200f42456bd606e09420783ea25f0e7f1",
+        "internal/analyzer/stats.go": "sha256:da019797dbf5a429a940b415e2aa62c453614100d5731e5016f03846b0cc5b98",
+        "internal/analyzer/workspace.go": "sha256:4b214af3f4ae0c7207241e5a8d73d90f9761f933b5d7de91f20492e5434ad623",
+        "internal/analyzer/workspace_test.go": "sha256:f209c7cf6666caa0579e68ecc1f1968f60462560e24ee124a80020d52a099012",
+        "internal/baseline/baseline.go": "sha256:3dec56aaf8d82a92d35aa5ec6cc7f8f2209d9e65a8468fda3d9bef0e840dd620",
+        "internal/baseline/baseline_test.go": "sha256:61d7df98761f4c58ff76d92dabc56c7b02bfa735c443eab7624cde5415ad51d5",
+        "internal/cli/commands.go": "sha256:f64f52c6725260a5f988218d46c49e6573d0a199115d9532f69979095df837cf",
+        "internal/cli/commands_test.go": "sha256:d28bee0afbe8062ebca23dd8f4190cbf9a901eb0027a49735a6a28bcb26e8ba0",
+        "internal/cli/options.go": "sha256:6b74d737fce5a82dcfc64af014dfb1b9957ed640cf534017592db869a9cf023d",
+        "internal/cli/render.go": "sha256:7eed2823ffcf6efbcfea5a9b56bdf8fb00f2caf8bee273aa96712fe2bce18404",
+        "internal/cli/run_test.go": "sha256:f373e038888a1ad68fc9df79d59a652b7299fe74956d0cb8bdf72cd70a7782e0",
+        "tests/e2e/cli_test.go": "sha256:bbc37f414d45d79461ba72e6cd182efdafff7c057f32a7a8f1fb34bf3c288e05",
+        "tests/e2e/plugin_test.go": "sha256:44b7bbf1455d9985850547fb8ba375ed55ea4d0c5cf88a228ca86b6a24415baf",
+        "tests/integration/cli_workflow_test.go": "sha256:273806f62077eacbf18128c29bcf97741d4dee6f3b2a2e0a60ef0371b9cd2a2d"
+      },
+      "status": "completed",
+      "tombstones": {}
+    }
+  },
+  "updated_at": "2026-09-10T12:39:08.082528+00:00"
+}

@@ -26,7 +26,10 @@ func TestConfigSchemaMatchesCheckedInArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, filename, _, _ := runtime.Caller(0)
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
 	path := filepath.Join(filepath.Dir(filename), "..", "..", "schemas", "solidlint-config-v1.schema.json")
 	checkedIn, err := os.ReadFile(path)
 	if err != nil {

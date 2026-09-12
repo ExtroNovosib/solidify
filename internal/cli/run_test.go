@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ExtroNovosib/solidify/internal/analyzer"
+	baselinepkg "github.com/ExtroNovosib/solidify/internal/baseline"
 )
 
 func run(args []string) int {
@@ -55,8 +56,8 @@ func TestPortableBaselineMatchesAcrossCheckoutDirectories(t *testing.T) {
 		t.Fatalf("checkout A findings = %v, want one", firstIssues)
 	}
 	baselinePath := filepath.Join(t.TempDir(), "baseline.json")
-	if err := writeBaseline(baselinePath, firstIssues, "reviewed portability contract"); err != nil {
-		t.Fatal(err)
+	if writeErr := writeBaseline(baselinePath, firstIssues, "reviewed portability contract"); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	accepted, version, err := readBaselineInfo(baselinePath)
 	if err != nil {
@@ -208,8 +209,8 @@ func captureStderr(t *testing.T, fn func()) string {
 	os.Stderr = w
 	defer func() { os.Stderr = old }()
 	fn()
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := w.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -228,8 +229,8 @@ func captureStdout(t *testing.T, fn func()) string {
 	os.Stdout = w
 	defer func() { os.Stdout = old }()
 	fn()
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := w.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	data, err := io.ReadAll(r)
 	if err != nil {
@@ -276,6 +277,35 @@ func TestBaselineStalePolicies(t *testing.T) {
 	})
 	if strings.Contains(stderr, "stale fingerprint") {
 		t.Fatalf("baseline-stale=ignore should suppress stale notice: %q", stderr)
+	}
+}
+
+func TestExpiredBaselinePolicies(t *testing.T) {
+	issue := analyzer.Issue{Rule: analyzer.RuleISP, Check: analyzer.CheckISPFatInterface, Message: "fat", Evidence: "fat-interface:interface=Wide", Subject: "p.Wide", Identity: "interface=Wide"}
+	issue.Pos.Filename = "a.go"
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	document, _, err := baselinepkg.Update(baselinepkg.Document{Version: baselinepkg.Version}, []analyzer.Issue{issue}, baselinepkg.Annotation{
+		Reason: "reviewed time-bounded compatibility debt", Expires: "2000-01-01",
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := baselinepkg.WriteDocument(path, document); err != nil {
+		t.Fatal(err)
+	}
+	warnStderr := captureStderr(t, func() {
+		if code := run([]string{"-baseline", path, "-baseline-expired=warn", "-fail=false", "testdata/clean"}); code != 0 {
+			t.Fatalf("baseline-expired=warn exit = %d, want 0", code)
+		}
+	})
+	if !strings.Contains(warnStderr, "expired entry") {
+		t.Fatalf("baseline-expired=warn did not report expiry: %q", warnStderr)
+	}
+	if code := run([]string{"-baseline", path, "-baseline-expired=error", "-fail=false", "testdata/clean"}); code != 1 {
+		t.Fatalf("baseline-expired=error exit = %d, want 1", code)
+	}
+	if code := run([]string{"-baseline-expired=ignore", "-fail=false", "testdata/clean"}); code != 2 {
+		t.Fatalf("baseline-expired=ignore exit = %d, want 2", code)
 	}
 }
 

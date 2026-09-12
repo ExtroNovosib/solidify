@@ -260,6 +260,7 @@ func largeMethodSetIssues(fset *token.FileSet, methodCount map[string]int, metho
 				Rule:     RuleSRP,
 				Check:    CheckSRPLargeType,
 				Severity: SeverityNote,
+				Evidence: fmt.Sprintf("large-type:type=%s;methods=%d", typeName, count),
 				Message: fmt.Sprintf(
 					"type %q has %d methods (max %d): it likely has more than one responsibility; consider splitting it into smaller collaborating types",
 					typeName, count, cfg.MaxMethodsPerType,

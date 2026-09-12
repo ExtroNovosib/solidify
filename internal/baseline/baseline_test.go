@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v5"
 
@@ -51,6 +52,34 @@ func TestBaselineReadsVersionFourCompatibilityDocument(t *testing.T) {
 	}
 	if document.Version != LegacyVersion || len(document.Entries) != 1 || document.Entries[0].Fingerprint != fingerprint {
 		t.Fatalf("legacy document = %+v", document)
+	}
+}
+
+func TestExpiredEntryPolicy(t *testing.T) {
+	issues := baselineTestIssues()
+	document, _, err := Update(Document{Version: Version}, issues, Annotation{
+		Reason: "reviewed time-bounded compatibility debt", Expires: "2026-09-10",
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	if writeErr := WriteDocument(path, document); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	active, err := ReadAt(path, time.Date(2026, time.September, 10, 23, 59, 59, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active.Accepted) != len(issues) || len(active.Expired) != 0 {
+		t.Fatalf("expiry date should remain active: %+v", active)
+	}
+	expired, err := ReadAt(path, time.Date(2026, time.September, 11, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(expired.Accepted) != 0 || len(expired.Expired) != len(issues) {
+		t.Fatalf("expired result = %+v", expired)
 	}
 }
 

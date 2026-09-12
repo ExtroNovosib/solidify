@@ -1,0 +1,20 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "AC-S2-1",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "GOCACHE=$PWD/.cache/go-build go test ./tests/e2e -run '^TestAnalysisModesHandleIllTypedSource$' -count=1",
+        "summary": "syntax and auto retained the large-type finding for parseable ill-typed input, auto warned and marked the package incomplete in stats, and types exited 2",
+        "source_fingerprint": "sha256:1bfb31886478faf92ccaaa9cfda202a5d16d855d900334a9d8a749053142292b"
+      }
+    }
+  ],
+  "source_fingerprints": {
+    "internal/analyzer/workspace.go": "sha256:1bfb31886478faf92ccaaa9cfda202a5d16d855d900334a9d8a749053142292b",
+    "internal/analyzer/stats.go": "sha256:da019797dbf5a429a940b415e2aa62c453614100d5731e5016f03846b0cc5b98",
+    "tests/e2e/cli_test.go": "sha256:b5e3060f95f3fe84a914d7a04f1daecabf271b1f2f5a1b16154b6273b8e4805a"
+  }
+}

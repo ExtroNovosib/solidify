@@ -39,6 +39,14 @@ type Document struct {
 	Entries []Entry `json:"entries"`
 }
 
+// ReadResult separates active accepted debt from entries whose review window
+// has elapsed. Expired entries are never included in Accepted.
+type ReadResult struct {
+	Document Document
+	Accepted map[string]bool
+	Expired  []Entry
+}
+
 type Annotation struct {
 	Reason  string
 	Owner   string
@@ -154,17 +162,36 @@ func ValidateReason(reason string) error {
 	return nil
 }
 
-// Read returns the compatibility fingerprint set for filtering.
+// Read returns the compatibility fingerprint set for filtering. It evaluates
+// expiry against the current UTC calendar date so the date is consistent across
+// hosts and time zones.
 func Read(path string) (map[string]bool, error) {
-	document, err := Load(path)
+	result, err := ReadAt(path, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
+	return result.Accepted, nil
+}
+
+// ReadAt reads a baseline with an injected clock for deterministic callers and
+// tests. An entry remains active throughout its YYYY-MM-DD expiry date, then
+// becomes expired on the next UTC calendar day.
+func ReadAt(path string, now time.Time) (ReadResult, error) {
+	document, err := Load(path)
+	if err != nil {
+		return ReadResult{}, err
+	}
 	accepted := make(map[string]bool, len(document.Entries))
+	today := now.UTC().Format("2006-01-02")
+	result := ReadResult{Document: document, Accepted: accepted}
 	for _, entry := range document.Entries {
+		if entry.Expires != "" && entry.Expires < today {
+			result.Expired = append(result.Expired, entry)
+			continue
+		}
 		accepted[entry.Fingerprint] = true
 	}
-	return accepted, nil
+	return result, nil
 }
 
 // Write creates a canonical v5 document. A reason is mandatory when findings
@@ -270,8 +297,8 @@ func WriteDocument(path string, document Document) error {
 		return err
 	}
 	destination := filepath.Clean(path)
-	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
-		return err
+	if mkdirErr := os.MkdirAll(filepath.Dir(destination), 0o755); mkdirErr != nil {
+		return mkdirErr
 	}
 	temp, err := os.CreateTemp(filepath.Dir(destination), ".solidlint-baseline-*.tmp")
 	if err != nil {

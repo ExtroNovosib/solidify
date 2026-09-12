@@ -26,47 +26,124 @@ const analysisModeAuto = "auto"
 // checking. Auto retains syntax findings when a package is ill-typed, while
 // types returns an error for an incomplete target package.
 func LoadWorkspace(paths []string, includeTests bool, mode string) ([]*packageFiles, []string, error) {
+	return loadWorkspace(paths, includeTests, workspaceLoadRequirements(mode, ExecutionPlan{}))
+}
+
+// LoadWorkspaceForPlan loads exactly the package information required by a
+// resolved CLI plan. It keeps the historical LoadWorkspace API available to
+// callers that do not have a plan, while the CLI avoids type work when every
+// selected check is syntax-equivalent.
+func LoadWorkspaceForPlan(paths []string, includeTests bool, mode string, plan ExecutionPlan) ([]*packageFiles, []string, error) {
+	return loadWorkspace(paths, includeTests, workspaceLoadRequirements(mode, plan))
+}
+
+type workspaceRequirements struct {
+	mode           string
+	needsTypeInfo  bool
+	strictTypeInfo bool
+}
+
+func workspaceLoadRequirements(mode string, plan ExecutionPlan) workspaceRequirements {
+	requirements := workspaceRequirements{mode: mode, strictTypeInfo: mode == "types"}
+	if mode == syntaxAnalysisMode {
+		return requirements
+	}
+	if mode == "types" || len(plan.selected) == 0 {
+		requirements.needsTypeInfo = true
+		return requirements
+	}
+	for id := range plan.selected {
+		metadata, ok := CheckMetadata(id)
+		if !ok || metadata.Syntax != SyntaxEquivalent {
+			requirements.needsTypeInfo = true
+			return requirements
+		}
+	}
+	return requirements
+}
+
+func loadWorkspace(paths []string, includeTests bool, requirements workspaceRequirements) ([]*packageFiles, []string, error) {
 	patterns, err := workspacePatterns(paths)
 	if err != nil {
 		return nil, nil, err
 	}
-	cfg := &packages.Config{
-		Mode:  workspacePackagesLoadMode(includeTests, mode),
-		Tests: includeTests,
-		Dir:   workspaceDir(paths),
-	}
-	loaded, err := packages.Load(cfg, patterns...)
+	loaded, err := loadWorkspacePackages(paths, includeTests, requirements, patterns)
 	if err != nil {
+		if requirements.mode == analysisModeAuto && requirements.needsTypeInfo {
+			pkgs, _, fallbackErr := loadWorkspace(paths, includeTests, workspaceLoadRequirements(syntaxAnalysisMode, ExecutionPlan{}))
+			if fallbackErr == nil {
+				return pkgs, []string{fmt.Sprintf("type resolution incomplete (%s); ran syntax-capable checks", compactLoadError(err))}, nil
+			}
+		}
+		if requirements.strictTypeInfo {
+			return nil, nil, fmt.Errorf("type analysis failed:\n%w", err)
+		}
 		return nil, nil, err
 	}
-	typeFailures, hardErr := collectWorkspaceLoadErrors(loaded, mode)
+	typeFailures, hardErr := collectWorkspaceLoadErrors(loaded, requirements)
 	if hardErr != nil {
+		if requirements.mode == analysisModeAuto && requirements.needsTypeInfo {
+			pkgs, _, fallbackErr := loadWorkspace(paths, includeTests, workspaceLoadRequirements(syntaxAnalysisMode, ExecutionPlan{}))
+			if fallbackErr == nil {
+				return pkgs, []string{fmt.Sprintf("type resolution incomplete (%s); ran syntax-capable checks", compactLoadError(hardErr))}, nil
+			}
+		}
+		if requirements.strictTypeInfo {
+			return nil, nil, fmt.Errorf("type analysis failed:\n%w", hardErr)
+		}
 		return nil, nil, hardErr
 	}
 	selected := selectLoadedPackages(loaded, includeTests)
 	root := canonicalWorkspaceRoot(loaded, workspaceDir(paths))
-	pkgs := packageFilesFromLoaded(selected, root, mode)
-	if mode == analysisModeAuto {
+	pkgs := packageFilesFromLoaded(selected, root, requirements.needsTypeInfo)
+	if requirements.mode == analysisModeAuto {
 		sort.Strings(typeFailures)
 		typeFailures = uniqueStrings(typeFailures)
 	}
 	return pkgs, typeFailures, nil
 }
 
+func loadWorkspacePackages(paths []string, includeTests bool, requirements workspaceRequirements, patterns []string) ([]*packages.Package, error) {
+	cfg := &packages.Config{
+		Mode:       workspacePackagesLoadModeForRequirements(includeTests, requirements),
+		Tests:      includeTests,
+		Dir:        workspaceDir(paths),
+		BuildFlags: []string{"-e"},
+	}
+	return packages.Load(cfg, patterns...)
+}
+
+func compactLoadError(err error) string {
+	if err == nil {
+		return "unknown type-resolution failure"
+	}
+	message := strings.Join(strings.Fields(err.Error()), " ")
+	if message == "" {
+		return "unknown type-resolution failure"
+	}
+	return message
+}
+
 func workspacePackagesLoadMode(includeTests bool, mode string) packages.LoadMode {
+	return workspacePackagesLoadModeForRequirements(includeTests, workspaceLoadRequirements(mode, ExecutionPlan{}))
+}
+
+func workspacePackagesLoadModeForRequirements(includeTests bool, requirements workspaceRequirements) packages.LoadMode {
 	loadMode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-		packages.NeedImports | packages.NeedDeps | packages.NeedExportFile |
 		packages.NeedSyntax | packages.NeedModule
+	if requirements.needsTypeInfo {
+		// NeedDeps would retain dependency syntax and TypesInfo bodies. The
+		// initial package's go/types graph already exposes direct imported
+		// package identities through pkg.Types.Imports().
+		loadMode |= packages.NeedImports | packages.NeedTypes | packages.NeedTypesInfo
+	}
 	if includeTests {
 		loadMode |= packages.NeedForTest
-	}
-	if mode != syntaxAnalysisMode {
-		loadMode |= packages.NeedTypes | packages.NeedTypesInfo | packages.NeedTypesSizes
 	}
 	return loadMode
 }
 
-func collectWorkspaceLoadErrors(loaded []*packages.Package, mode string) ([]string, error) {
+func collectWorkspaceLoadErrors(loaded []*packages.Package, requirements workspaceRequirements) ([]string, error) {
 	var typeFailures []string
 	for _, pkg := range loaded {
 		var packageTypeFailures []string
@@ -78,7 +155,7 @@ func collectWorkspaceLoadErrors(loaded []*packages.Package, mode string) ([]stri
 				packageTypeFailures = append(packageTypeFailures, loadErr.Msg)
 			}
 		}
-		if mode != syntaxAnalysisMode && pkg.IllTyped {
+		if requirements.needsTypeInfo && (pkg.IllTyped || pkg.Types == nil || pkg.TypesInfo == nil) {
 			packageTypeFailures = append(packageTypeFailures, "package or dependency is ill-typed")
 		}
 		if len(packageTypeFailures) > 0 {
@@ -86,7 +163,7 @@ func collectWorkspaceLoadErrors(loaded []*packages.Package, mode string) ([]stri
 			typeFailures = append(typeFailures, fmt.Sprintf("%s: type resolution incomplete (%s)", pkg.PkgPath, packageTypeFailures[0]))
 		}
 	}
-	if mode == "types" && len(typeFailures) > 0 {
+	if requirements.strictTypeInfo && len(typeFailures) > 0 {
 		sort.Strings(typeFailures)
 		return nil, fmt.Errorf("type analysis failed:\n%s", strings.Join(uniqueStrings(typeFailures), "\n"))
 	}
@@ -114,7 +191,7 @@ func selectLoadedPackages(loaded []*packages.Package, includeTests bool) map[str
 	return selected
 }
 
-func packageFilesFromLoaded(selected map[string]*packages.Package, root, mode string) []*packageFiles {
+func packageFilesFromLoaded(selected map[string]*packages.Package, root string, requestedTypeInfo bool) []*packageFiles {
 	pkgs := make([]*packageFiles, 0, len(selected))
 	for _, pkg := range selected {
 		if len(pkg.Syntax) == 0 {
@@ -130,12 +207,12 @@ func packageFilesFromLoaded(selected map[string]*packages.Package, root, mode st
 			files:        pkg.Syntax,
 			info:         pkg.TypesInfo,
 			typePkg:      pkg.Types,
-			typeComplete: mode != syntaxAnalysisMode && pkg.Types != nil && pkg.TypesInfo != nil && !pkg.IllTyped,
+			typeComplete: requestedTypeInfo && pkg.Types != nil && pkg.TypesInfo != nil && !pkg.IllTyped,
 			pkgPath:      pkg.PkgPath,
 			pkgName:      pkg.Name,
 			modulePath:   modulePath(pkg),
 			imports:      sortedImportPaths(pkg.Imports),
-			typeImports:  packageTypeImports(pkg.Imports),
+			typeImports:  packageTypeImportsFromLoaded(pkg),
 			analysisRoot: root,
 			generated:    map[*ast.File]bool{},
 		}
@@ -146,6 +223,22 @@ func packageFilesFromLoaded(selected map[string]*packages.Package, root, mode st
 	}
 	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].pkgPath < pkgs[j].pkgPath })
 	return pkgs
+}
+
+func packageTypeImportsFromLoaded(pkg *packages.Package) map[string]*types.Package {
+	if pkg == nil {
+		return map[string]*types.Package{}
+	}
+	imports := packageTypeImports(pkg.Imports)
+	if pkg.Types == nil {
+		return imports
+	}
+	for _, imported := range pkg.Types.Imports() {
+		if imported != nil {
+			imports[imported.Path()] = imported
+		}
+	}
+	return imports
 }
 
 func workspaceDir(paths []string) string {
@@ -246,12 +339,16 @@ func FilterExcludedFiles(pkgs []*packageFiles, patterns []string) []*packageFile
 // one mutation, then recomputes dependency facts and typed snapshots once.
 func ApplyWorkspaceFilePolicy(pkgs []*packageFiles, patterns []string) []*packageFiles {
 	out := pkgs[:0]
-	filteredFacts := map[string]string{}
 	changed := false
 	for _, pkg := range pkgs {
 		if pkg == nil {
 			continue
 		}
+		if !packageNeedsWorkspaceFilePolicy(pkg, patterns) {
+			out = append(out, pkg)
+			continue
+		}
+		changed = true
 		included := make([]*ast.File, 0, len(pkg.files))
 		for _, file := range pkg.files {
 			filename := pkg.fset.Position(file.Pos()).Filename
@@ -262,18 +359,59 @@ func ApplyWorkspaceFilePolicy(pkgs []*packageFiles, patterns []string) []*packag
 			included = append(included, file)
 		}
 		pkg.files = included
-		changed = changed || len(included) != cap(included)
 		pkg.imports = importsFromSyntax(pkg.files)
-		filteredFacts[pkg.pkgPath] = sourceFactManifest(pkg)
 		if len(pkg.files) > 0 {
 			out = append(out, pkg)
 		}
 	}
-	if changed {
-		recomputeDependencyFacts(out, filteredFacts)
-		rebuildFilteredTypeSnapshots(out)
+	if !changed {
+		return pkgs
 	}
+	recomputeDependencyFacts(out, dependencyFactManifests(out))
+	rebuildFilteredTypeSnapshots(out)
 	return out
+}
+
+// packageNeedsWorkspaceFilePolicy reports whether generated-file removal or a
+// configured exclusion will mutate a package. The common no-op path avoids
+// source manifests and filtered type-snapshot rebuilding altogether.
+func packageNeedsWorkspaceFilePolicy(pkg *packageFiles, patterns []string) bool {
+	if pkg == nil {
+		return false
+	}
+	for _, file := range pkg.files {
+		if pkg.generated[file] {
+			return true
+		}
+		if len(patterns) == 0 {
+			continue
+		}
+		filename := pkg.fset.Position(file.Pos()).Filename
+		relative := PortablePath(pkg.analysisRoot, filename)
+		if Excluded(relative, patterns) || Excluded(filename, patterns) {
+			return true
+		}
+	}
+	return false
+}
+
+func dependencyFactManifests(pkgs []*packageFiles) map[string]string {
+	needed := map[string]bool{}
+	for _, pkg := range pkgs {
+		if pkg == nil {
+			continue
+		}
+		for _, importPath := range pkg.imports {
+			needed[importPath] = true
+		}
+	}
+	facts := make(map[string]string, len(needed))
+	for _, pkg := range pkgs {
+		if pkg != nil && needed[pkg.pkgPath] {
+			facts[pkg.pkgPath] = sourceFactManifest(pkg)
+		}
+	}
+	return facts
 }
 
 func recomputeDependencyFacts(pkgs []*packageFiles, filteredFacts map[string]string) {
@@ -287,9 +425,7 @@ func recomputeDependencyFacts(pkgs []*packageFiles, filteredFacts map[string]str
 				facts.WriteByte(0)
 			}
 		}
-		if facts.Len() > 0 {
-			pkg.dependencyFacts = facts.String()
-		}
+		pkg.dependencyFacts = facts.String()
 	}
 }
 

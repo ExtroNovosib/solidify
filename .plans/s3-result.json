@@ -1,0 +1,24 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "S3",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/baseline ./internal/cli ./tests/integration -run 'Test.*ExpiredBaseline|TestExpiredEntryPolicy' -count=1",
+        "summary": "implemented central expiry classification with injected dates, strict CLI policy, compatibility behavior, focused tests, and documentation",
+        "source_fingerprint": "sha256:4327ee9af3c45f8d401fada1789ea5446a9d36038fbf37d6307dad61209faedf"
+      }
+    }
+  ],
+  "source_fingerprints": {
+    "internal/baseline/baseline.go": "sha256:4327ee9af3c45f8d401fada1789ea5446a9d36038fbf37d6307dad61209faedf",
+    "internal/baseline/baseline_test.go": "sha256:61d7df98761f4c58ff76d92dabc56c7b02bfa735c443eab7624cde5415ad51d5",
+    "internal/cli/commands.go": "sha256:e9c6f081c55dda82ac1e1cf590a4c486da0f3bbf28d90325f22d62da7caf777c",
+    "internal/cli/options.go": "sha256:6b74d737fce5a82dcfc64af014dfb1b9957ed640cf534017592db869a9cf023d",
+    "internal/cli/run_test.go": "sha256:f373e038888a1ad68fc9df79d59a652b7299fe74956d0cb8bdf72cd70a7782e0",
+    "tests/integration/cli_workflow_test.go": "sha256:273806f62077eacbf18128c29bcf97741d4dee6f3b2a2e0a60ef0371b9cd2a2d",
+    "README.md": "sha256:354c0686264fe5a3bb5d82eaef29de636714e042a4d8be2981b35e3ecefe4de3"
+  }
+}

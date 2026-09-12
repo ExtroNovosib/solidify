@@ -1,0 +1,24 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "S2",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "GOCACHE=$PWD/.cache/go-build go test ./tests/e2e -run '^TestAnalysisModesHandleIllTypedSource$' -count=1",
+        "summary": "implemented separate syntax loader requirements, auto fallback/warnings, strict types failure, package completeness stats, and syntax finding identity",
+        "source_fingerprint": "sha256:1bfb31886478faf92ccaaa9cfda202a5d16d855d900334a9d8a749053142292b"
+      }
+    }
+  ],
+  "source_fingerprints": {
+    "internal/analyzer/workspace.go": "sha256:1bfb31886478faf92ccaaa9cfda202a5d16d855d900334a9d8a749053142292b",
+    "internal/analyzer/srp.go": "sha256:e2a6016b414c51cf49d3f6baf9c0a18dfc6a8962bf2c34772841de6388189a1a",
+    "internal/analyzer/srp_metrics.go": "sha256:69e17f73c91501a582165ce0c728488200f42456bd606e09420783ea25f0e7f1",
+    "internal/analyzer/stats.go": "sha256:da019797dbf5a429a940b415e2aa62c453614100d5731e5016f03846b0cc5b98",
+    "internal/analyzer/run.go": "sha256:402ed0caee88541768fd29be2d659c42fbf902e7c2e9a6b2a10ee45b49692d3d",
+    "internal/cli/render.go": "sha256:938772172b863282cf07073587c83e2f2f092620ddf7492a5c7a80a58566b125",
+    "tests/e2e/cli_test.go": "sha256:b5e3060f95f3fe84a914d7a04f1daecabf271b1f2f5a1b16154b6273b8e4805a"
+  }
+}

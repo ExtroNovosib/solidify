@@ -18,7 +18,7 @@ type checkOptions struct {
 	ispMinMethods, ispUsageRatioPercent            int
 	configPath, baselinePath, writeBaselinePath    string
 	baselineReason, baselineOwner, baselineExpires string
-	baselineStale, cacheDir                        string
+	baselineStale, baselineExpired, cacheDir       string
 	cacheDebug, printConfig, baselinePrune         bool
 	paths                                          []string
 	set                                            map[string]bool
@@ -51,15 +51,16 @@ func parseCheckOptions(args []string) (checkOptions, error) {
 	fs.StringVar(&options.baselineOwner, "baseline-owner", "", "optional owner for newly accepted findings")
 	fs.StringVar(&options.baselineExpires, "baseline-expires", "", "optional expiry date (YYYY-MM-DD)")
 	fs.StringVar(&options.baselineStale, "baseline-stale", "warn", "stale baseline policy: ignore|warn|error")
+	fs.StringVar(&options.baselineExpired, "baseline-expired", "warn", "expired baseline policy: warn|error (expired entries remain live)")
 	fs.BoolVar(&options.baselinePrune, "prune", false, "remove stale entries during baseline update")
 	fs.StringVar(&options.cacheDir, "cache-dir", "", "cache directory (default: platform user cache)")
 	fs.BoolVar(&options.cache, "cache", true, "enable the analysis cache")
 	fs.BoolVar(&options.cacheDebug, "cache-debug", false, "print cache diagnostics to stderr")
 	fs.BoolVar(&options.printConfig, "print-config", false, "print effective configuration and exit")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "solidlint checks Go source for heuristic SOLID principle violations.")
-		fmt.Fprintln(fs.Output(), "\nUsage: solidlint [check] [flags] <path> [<path> ...]")
-		fmt.Fprintln(fs.Output(), "A .go target analyzes its containing package; directory targets are recursive.")
+		_, _ = fmt.Fprintln(fs.Output(), "solidlint checks Go source for heuristic SOLID principle violations.")
+		_, _ = fmt.Fprintln(fs.Output(), "\nUsage: solidlint [check] [flags] <path> [<path> ...]")
+		_, _ = fmt.Fprintln(fs.Output(), "A .go target analyzes its containing package; directory targets are recursive.")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -93,6 +94,9 @@ func (options checkOptions) validate() error {
 	}
 	if options.baselineStale != "ignore" && options.baselineStale != "warn" && options.baselineStale != "error" {
 		return fmt.Errorf("unknown baseline stale policy %q (expected ignore, warn, or error)", options.baselineStale)
+	}
+	if options.baselineExpired != "warn" && options.baselineExpired != "error" {
+		return fmt.Errorf("unknown baseline expired policy %q (expected warn or error)", options.baselineExpired)
 	}
 	return nil
 }

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -53,8 +55,9 @@ func TestPrecisionCorpus(t *testing.T) {
 }
 
 type stableEvaluationManifest struct {
-	Revision string                 `json:"revision"`
-	Cases    []stableEvaluationCase `json:"cases"`
+	Revision   string                     `json:"revision"`
+	Cases      []stableEvaluationCase     `json:"cases"`
+	EdgeStyles []stableEvaluationEdgeCase `json:"edgeStyles"`
 }
 
 type stableEvaluationCase struct {
@@ -72,6 +75,22 @@ type stableEvaluationRef struct {
 	Subject string `json:"subject"`
 }
 
+type stableEvaluationEdgeCase struct {
+	Key                    string                     `json:"key"`
+	Style                  string                     `json:"style"`
+	Root                   string                     `json:"root"`
+	Expected               []stableEvaluationExpected `json:"expected"`
+	ObservedFalsePositives int                        `json:"observedFalsePositives"`
+	ObservedFalseNegatives int                        `json:"observedFalseNegatives"`
+	Rationale              string                     `json:"rationale"`
+}
+
+type stableEvaluationExpected struct {
+	CheckID CheckID `json:"checkId"`
+	Path    string  `json:"path"`
+	Subject string  `json:"subject"`
+}
+
 func TestStableEvaluationManifestCoverageAndVerdicts(t *testing.T) {
 	repositoryRoot := filepath.Clean(testdataDir(t, ".."))
 	manifestPath := filepath.Join(repositoryRoot, "testdata", "evaluation", "stable-v0.2.json")
@@ -83,7 +102,7 @@ func TestStableEvaluationManifestCoverageAndVerdicts(t *testing.T) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	if manifest.Revision != "stable-v0.2-r1" {
+	if manifest.Revision != "stable-v0.2-r2" {
 		t.Fatalf("manifest revision = %q", manifest.Revision)
 	}
 	stable := map[CheckID]bool{}
@@ -132,6 +151,99 @@ func TestStableEvaluationManifestCoverageAndVerdicts(t *testing.T) {
 	if !reflect.DeepEqual(seen, stable) {
 		t.Fatalf("manifest checks = %v, stable registry = %v", seen, stable)
 	}
+}
+
+// TestStableEvaluationEdgeStyles records the exact machine-observed output
+// for source forms that commonly make structural linters noisy or blind. It
+// is fixture accounting only: it does not claim an external-project review.
+func TestStableEvaluationEdgeStyles(t *testing.T) {
+	repositoryRoot := filepath.Clean(testdataDir(t, ".."))
+	manifestPath := filepath.Join(repositoryRoot, "testdata", "evaluation", "stable-v0.2.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest stableEvaluationManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Revision != "stable-v0.2-r2" {
+		t.Fatalf("manifest revision = %q", manifest.Revision)
+	}
+	wantStyles := []string{"embedding", "generics", "adapter", "generated", "platform-specific"}
+	slices.Sort(wantStyles)
+	seenStyles := map[string]bool{}
+	for _, edge := range manifest.EdgeStyles {
+		if edge.Key == "" || edge.Style == "" || edge.Root == "" || edge.Rationale == "" {
+			t.Fatalf("incomplete edge-style case: %+v", edge)
+		}
+		if seenStyles[edge.Style] {
+			t.Fatalf("duplicate edge-style case for %q", edge.Style)
+		}
+		seenStyles[edge.Style] = true
+		pkgs, _, err := LoadWorkspace([]string{filepath.Join(repositoryRoot, filepath.FromSlash(edge.Root))}, false, "types")
+		if err != nil {
+			t.Fatalf("load %s: %v", edge.Key, err)
+		}
+		if edge.Style == "platform-specific" {
+			assertHostPlatformFileLoaded(t, pkgs)
+		}
+		cfg := DefaultConfig()
+		cfg.CacheEnabled = false
+		issues := Run(pkgs, cfg, allRulesEnabled())
+		falseNegatives, falsePositives := edgeVerdictCounts(issues, edge.Expected)
+		if falsePositives != edge.ObservedFalsePositives || falseNegatives != edge.ObservedFalseNegatives {
+			t.Fatalf("%s observed false positives=%d false negatives=%d, want false positives=%d false negatives=%d; issues=%v", edge.Key, falsePositives, falseNegatives, edge.ObservedFalsePositives, edge.ObservedFalseNegatives, issues)
+		}
+	}
+	if !reflect.DeepEqual(sortedStringKeys(seenStyles), wantStyles) {
+		t.Fatalf("edge styles = %v, want %v", sortedStringKeys(seenStyles), wantStyles)
+	}
+}
+
+func edgeVerdictCounts(issues []Issue, expected []stableEvaluationExpected) (falseNegatives, falsePositives int) {
+	remaining := append([]Issue(nil), issues...)
+	for _, wanted := range expected {
+		match := slices.IndexFunc(remaining, func(issue Issue) bool {
+			return issue.Check == wanted.CheckID && issue.PortablePath() == wanted.Path && issue.Subject == wanted.Subject
+		})
+		if match < 0 {
+			falseNegatives++
+			continue
+		}
+		remaining = append(remaining[:match], remaining[match+1:]...)
+	}
+	return falseNegatives, len(remaining)
+}
+
+func assertHostPlatformFileLoaded(t *testing.T, pkgs []*packageFiles) {
+	t.Helper()
+	want := "platform_other.go"
+	switch runtime.GOOS {
+	case "darwin":
+		want = "platform_darwin.go"
+	case "linux":
+		want = "platform_linux.go"
+	case "windows":
+		want = "platform_windows.go"
+	}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.files {
+			if filepath.Base(pkg.fset.Position(file.Pos()).Filename) == want {
+				return
+			}
+		}
+	}
+	t.Fatalf("host-selected platform file %q was not loaded", want)
+}
+
+func sortedStringKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for value := range values {
+		keys = append(keys, value)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 func loadManifestIssues(t *testing.T, repositoryRoot, relativeRoot string, loaded map[string][]Issue) []Issue {

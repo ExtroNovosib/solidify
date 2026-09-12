@@ -1,11 +1,11 @@
 # Stable profile evaluation — v0.2
 
-Manifest revision: `stable-v0.2-r1` in `testdata/evaluation/stable-v0.2.json`.
+Manifest revision: `stable-v0.2-r2` in `testdata/evaluation/stable-v0.2.json`.
 
 Reproduce the adjudication gate with:
 
 ```sh
-go test ./internal/analyzer -run '^(TestPrecisionCorpus|TestStableEvaluationManifestCoverageAndVerdicts)$' -count=1
+go test ./internal/analyzer -run '^(TestPrecisionCorpus|TestStableEvaluationManifestCoverageAndVerdicts|TestStableEvaluationEdgeStyles)$' -count=1
 ```
 
 ## Results
@@ -26,3 +26,17 @@ go test ./internal/analyzer -run '^(TestPrecisionCorpus|TestStableEvaluationMani
 - False-negative review: each positive case names the expected check ID, portable path, and subject. The gate fails if that exact finding disappears, moves unexpectedly, or changes identity ownership.
 - Known limits remain documented per check: generated/framework surfaces, closed protocol dispatch, migration adapters, composition roots, and dependency-owned interfaces require human context.
 - This report records heuristic evidence, not a claim of semantic proof. A maturity change still requires a separate manifest revision and reviewed corpus update.
+
+## Edge-style matrix
+
+The following counts are machine-observed from the versioned fixture roots in
+`stable-v0.2.json`. They are regression accounting for these small fixtures;
+they do not make an external-project review claim.
+
+| Source style | Expected result | Observed false positives | Observed false negatives |
+|---|---|---:|---:|
+| Embedding | one `SOLID-I/fat-interface` finding on the nine-method aggregate | 0 | 0 |
+| Generics | one `SOLID-I/fat-interface` finding on the generic nine-method port | 0 | 0 |
+| Adapter boundary | no finding on a one-capability adapter | 0 | 0 |
+| Generated source | no finding from a generated wide interface | 0 | 0 |
+| Platform-specific source | no finding with the host-selected build-tag file | 0 | 0 |

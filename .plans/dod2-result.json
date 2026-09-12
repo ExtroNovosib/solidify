@@ -1,0 +1,20 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "DOD-2",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "GOCACHE=$PWD/.cache/go-build make check",
+        "summary": "canonical gate passed JSON/SARIF schema checks, cache parity, clean/violation precision fixtures, plugin selection, and version validation while preserving stable report contracts",
+                "source_fingerprint": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae"
+      }
+    }
+  ],
+  "source_fingerprints": {
+        "Makefile": "sha256:4b62e42bacc23a9acc14a387c0743d989ec470b96d7708f4eb06fed1d1e45aae",
+        "internal/cli/commands.go": "sha256:f64f52c6725260a5f988218d46c49e6573d0a199115d9532f69979095df837cf",
+        "internal/cli/render.go": "sha256:7eed2823ffcf6efbcfea5a9b56bdf8fb00f2caf8bee273aa96712fe2bce18404"
+  }
+}

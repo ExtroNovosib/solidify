@@ -1,0 +1,19 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "AC-S1-1",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/analyzer -run 'TestRun_CacheInvalidatesWhenImported(MethodSet|Type)Changes|Test.*Cache' -count=1",
+        "summary": "cache invalidation and cache parity cases passed after hashing value and pointer method sets of imported named types",
+        "source_fingerprint": "sha256:7a952025d4a11b8bdb75ab2202dfde7f1599621562bf258e0edbb6032121c0f5"
+      }
+    }
+  ],
+  "source_fingerprints": {
+    "internal/analyzer/cache.go": "sha256:7a952025d4a11b8bdb75ab2202dfde7f1599621562bf258e0edbb6032121c0f5",
+    "internal/analyzer/run_test.go": "sha256:0b276b535a6cc4f79551e565be884a618d478e2591002432c608ff572c3c5cc8"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "S4",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "GOCACHE=$PWD/.cache/go-build go test ./internal/cli ./tests/e2e -run 'Test.*(Help|ChecksExplain|AnalysisCoverage)' -count=1",
+        "summary": "implemented successful help paths, explainable configuration and remediation metadata, and explicit package analysis coverage in text and JSON stats",
+        "source_fingerprint": "sha256:de7800e07f781214d64bd629a8408b561966e31651a085dc3c806f67b6dacf62"
+      }
+    }
+  ],
+  "source_fingerprints": {
+    "internal/cli/commands.go": "sha256:de7800e07f781214d64bd629a8408b561966e31651a085dc3c806f67b6dacf62",
+    "internal/cli/commands_test.go": "sha256:d28bee0afbe8062ebca23dd8f4190cbf9a901eb0027a49735a6a28bcb26e8ba0",
+    "tests/e2e/cli_test.go": "sha256:bbc37f414d45d79461ba72e6cd182efdafff7c057f32a7a8f1fb34bf3c288e05",
+    "README.md": "sha256:89f2d6a52dc595fcae6561ba6febd65b69cb533a54185b39d38f047ac4203bfe",
+    "internal/analyzer/stats.go": "sha256:da019797dbf5a429a940b415e2aa62c453614100d5731e5016f03846b0cc5b98",
+    "internal/cli/render.go": "sha256:938772172b863282cf07073587c83e2f2f092620ddf7492a5c7a80a58566b125"
+  }
+}

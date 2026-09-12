@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,6 +68,96 @@ func TestChecksListAndExplainUseRegistryOrder(t *testing.T) {
 	}
 }
 
+func TestChecksExplainIncludesConfigurationAndRemediation(t *testing.T) {
+	text := captureInvocation(t, []string{"checks", "explain", string(analyzer.CheckISPFatInterface)})
+	if text.code != 0 || !strings.Contains(text.stdout, "thresholds.max_interface_methods") || !strings.Contains(text.stdout, "remediation: Split the interface") {
+		t.Fatalf("text explain = %+v", text)
+	}
+	jsonResult := captureInvocation(t, []string{"checks", "explain", string(analyzer.CheckISPFatInterface), "-format=json"})
+	if jsonResult.code != 0 {
+		t.Fatalf("json explain = %+v", jsonResult)
+	}
+	var explanation checkDescription
+	if err := json.Unmarshal([]byte(jsonResult.stdout), &explanation); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(explanation.Configuration, "thresholds.max_interface_methods") || explanation.Remediation == "" {
+		t.Fatalf("explanation guidance = %+v", explanation)
+	}
+}
+
+func TestHelpExitsSuccessfully(t *testing.T) {
+	result := captureInvocation(t, []string{"--help"})
+	if result.code != 0 || !strings.Contains(result.stderr, "Usage: solidlint") {
+		t.Fatalf("help = %+v", result)
+	}
+}
+
+func TestTopLevelHelpListsCommands(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"help"}} {
+		result := captureInvocation(t, args)
+		if result.code != 0 {
+			t.Fatalf("help %v = %+v", args, result)
+		}
+		for _, required := range []string{"Usage: solidlint", "check", "checks", "config", "baseline", "stats", "solidlint checks explain"} {
+			if !strings.Contains(result.stderr, required) {
+				t.Fatalf("help %v omitted %q:\n%s", args, required, result.stderr)
+			}
+		}
+	}
+}
+
+func TestChecksExplainExamples(t *testing.T) {
+	representative := []analyzer.CheckID{
+		analyzer.CheckSRPLargeType,
+		analyzer.CheckOCPTypeDispatch,
+		analyzer.CheckLSPNonExactEOF,
+		analyzer.CheckISPFatInterface,
+		analyzer.CheckDIPConcreteDependency,
+	}
+	for _, id := range representative {
+		t.Run(string(id), func(t *testing.T) {
+			text := captureInvocation(t, []string{"checks", "explain", string(id)})
+			if text.code != 0 {
+				t.Fatalf("text explain = %+v", text)
+			}
+			for _, required := range []string{"configuration:", "remediation:", "example before:", "example after:", "legitimate exception:"} {
+				if !strings.Contains(text.stdout, required) {
+					t.Fatalf("text explanation for %s omitted %q:\n%s", id, required, text.stdout)
+				}
+			}
+
+			jsonResult := captureInvocation(t, []string{"checks", "explain", string(id), "-format=json"})
+			if jsonResult.code != 0 {
+				t.Fatalf("json explain = %+v", jsonResult)
+			}
+			var description checkDescription
+			if err := json.Unmarshal([]byte(jsonResult.stdout), &description); err != nil {
+				t.Fatal(err)
+			}
+			assertCompleteCheckGuidance(t, description)
+		})
+	}
+
+	all := allCheckDescriptions()
+	if len(all) != len(analyzer.RegisteredCheckIDs()) {
+		t.Fatalf("description count = %d, want %d", len(all), len(analyzer.RegisteredCheckIDs()))
+	}
+	for index, description := range all {
+		if description.ID != analyzer.RegisteredCheckIDs()[index] {
+			t.Fatalf("description[%d] = %s, want %s", index, description.ID, analyzer.RegisteredCheckIDs()[index])
+		}
+		assertCompleteCheckGuidance(t, description)
+	}
+}
+
+func assertCompleteCheckGuidance(t *testing.T, description checkDescription) {
+	t.Helper()
+	if len(description.Configuration) == 0 || description.Remediation == "" || description.ExampleBefore == "" || description.ExampleAfter == "" || description.Exception == "" {
+		t.Fatalf("incomplete guidance for %s: %+v", description.ID, description)
+	}
+}
+
 func TestStatsUsesExecutionPlanCounters(t *testing.T) {
 	result := captureInvocation(t, []string{"stats", "-cache=false", "-format=json", "testdata/clean"})
 	if result.code != 0 {
@@ -82,6 +173,25 @@ func TestStatsUsesExecutionPlanCounters(t *testing.T) {
 	for _, group := range stats.Groups {
 		if group.CacheHits != 0 || group.CacheMisses != 0 {
 			t.Fatalf("cache-disabled stats = %+v", stats.Groups)
+		}
+	}
+}
+
+func TestAnalysisCoverageStats(t *testing.T) {
+	result := captureInvocation(t, []string{"stats", "-cache=false", "-format=json", "testdata/clean"})
+	if result.code != 0 {
+		t.Fatalf("stats = %+v", result)
+	}
+	var stats analyzer.ExecutionStats
+	if err := json.Unmarshal([]byte(result.stdout), &stats); err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.Packages) == 0 {
+		t.Fatalf("stats omitted package coverage: %+v", stats)
+	}
+	for _, pkg := range stats.Packages {
+		if !pkg.TypeComplete {
+			t.Fatalf("clean fixture is unexpectedly incomplete: %+v", stats.Packages)
 		}
 	}
 }
@@ -148,11 +258,11 @@ func captureInvocation(t *testing.T, args []string) invocationResult {
 	os.Stdout, os.Stderr = stdout, stderr
 	code := Run(args, BuildInfo{Version: "dev", Commit: "test", BuildDate: "test"})
 	os.Stdout, os.Stderr = oldStdout, oldStderr
-	if err := stdout.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := stdout.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
-	if err := stderr.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := stderr.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	stdoutData, err := os.ReadFile(stdout.Name())
 	if err != nil {
@@ -171,8 +281,8 @@ func captureBrokenPipeInvocation(t *testing.T, args []string) (int, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := reader.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := reader.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	stderr, err := os.CreateTemp(t.TempDir(), "stderr")
 	if err != nil {

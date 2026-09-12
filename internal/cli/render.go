@@ -68,5 +68,11 @@ func renderStats(stats analyzer.ExecutionStats, format string) error {
 	for _, group := range stats.Groups {
 		fmt.Printf("%s scope=%s executions=%d cache_hits=%d cache_misses=%d\n", group.Name, group.Scope, group.Executions, group.CacheHits, group.CacheMisses)
 	}
+	for _, pkg := range stats.Packages {
+		fmt.Printf("package %s type_complete=%t\n", pkg.Package, pkg.TypeComplete)
+	}
+	for _, coverage := range stats.CheckCoverage {
+		fmt.Printf("check %s status=%s reason=%s\n", coverage.Check, coverage.Status, coverage.Reason)
+	}
 	return nil
 }

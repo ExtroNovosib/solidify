@@ -2,11 +2,15 @@
 package solidlint
 
 import (
-	"github.com/ExtroNovosib/solidify/internal/analysisapi"
 	"github.com/golangci/plugin-module-register/register"
 	"golang.org/x/tools/go/analysis"
+
+	"github.com/ExtroNovosib/solidify/internal/analysisapi"
 )
 
+// init registers the adapter through the module-plugin registry at package load.
+//
+//nolint:gochecknoinits // The plugin-module registry discovers adapters through registration side effects.
 func init() {
 	register.Plugin("solidlint", New)
 }

@@ -106,7 +106,7 @@ func RunPlan(pkgs []*packageFiles, cfg Config, plan ExecutionPlan) ([]Issue, Exe
 	pkgs = prepareRunPackages(pkgs, cfg)
 	cfg.selectedChecks = plan.selectionCopy()
 	cache := initRunCache(pkgs, cfg, plan)
-	stats := newRunStats(plan)
+	stats := newRunStats(plan, cfg)
 	all := runPackageScopedChecks(pkgs, cfg, plan, cache, stats)
 	all = append(all, runProgramScopedChecks(pkgs, cfg, plan, cache, stats)...)
 	reportRunDiagnostics(cfg, cache, pkgs)
@@ -127,7 +127,7 @@ func RunPlan(pkgs []*packageFiles, cfg Config, plan ExecutionPlan) ([]Issue, Exe
 		}
 	}
 	_ = FinalizeIssues(all, "workspace")
-	return all, stats.snapshot()
+	return all, stats.snapshot(pkgs)
 }
 
 func issueBelongsToPackage(issue Issue, pkg *packageFiles) bool {

@@ -50,8 +50,8 @@ func resolveCheckPolicy(options checkOptions, build BuildInfo) (checkPolicy, err
 	cfg.IncludeTests = options.includeTests
 	cfg.ToolVersion = build.Version
 	cfg.ExcludedFiles = append([]string(nil), fileConfig.Excludes...)
-	if err := analyzer.ValidateConfig(cfg); err != nil {
-		return checkPolicy{}, err
+	if validateErr := analyzer.ValidateConfig(cfg); validateErr != nil {
+		return checkPolicy{}, validateErr
 	}
 	ruleSpec := options.rules
 	if len(fileConfig.EnabledRules) > 0 && !options.set["rules"] {
@@ -108,7 +108,7 @@ type analysisResult struct {
 }
 
 func executeAnalysis(policy checkPolicy) (analysisResult, error) {
-	packages, warnings, err := analyzer.LoadWorkspace(policy.options.paths, policy.options.includeTests, policy.options.analysis)
+	packages, warnings, err := analyzer.LoadWorkspaceForPlan(policy.options.paths, policy.options.includeTests, policy.options.analysis, policy.plan)
 	if err != nil {
 		return analysisResult{}, err
 	}

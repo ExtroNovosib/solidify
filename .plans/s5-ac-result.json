@@ -1,0 +1,19 @@
+{
+  "unit_id": "solidlint-quality",
+  "item_results": [
+    {
+      "item_id": "AC-S5-1",
+      "status": "PASS",
+      "evidence": {
+        "kind": "command",
+        "command": "make plugin-go-e2e-contract",
+        "summary": "portable Makefile contract proof passed: the Linux shared-plugin recipe builds the plugin and pinned host, accepts only the expected violation exit, and asserts the selected diagnostic; vet and golangci-lint now cover all first-party production packages",
+        "source_fingerprint": "sha256:2c6172257b34bf1eca0a5fca782b64ebace29c146db421dff7cf6abbc7b00c62"
+      }
+    }
+  ],
+  "source_fingerprints": {
+    "Makefile": "sha256:2c6172257b34bf1eca0a5fca782b64ebace29c146db421dff7cf6abbc7b00c62",
+    "tests/e2e/plugin_test.go": "sha256:44b7bbf1455d9985850547fb8ba375ed55ea4d0c5cf88a228ca86b6a24415baf"
+  }
+}
