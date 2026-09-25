@@ -37,8 +37,21 @@ type packageFiles struct {
 	dependencyFacts  string
 	analysisRoot     string
 	generated        map[*ast.File]bool
-	filteredTypeErr  string
+	removedFiles     []*ast.File // generated or excluded; may still shape type information
+	passFiles        []*ast.File // files a go/analysis pass would see; nil means files
+	filteredTypeErr  string      // why excluded files stayed in the loaded type information
 	filteredRebuilds int
+}
+
+// packageCheckFiles returns the files package-scoped checks receive. Like a
+// go/analysis pass, they include generated files so package-wide declaration
+// indexes stay complete; every package check skips generated files when it
+// reports. Configured exclusions are never included.
+func (pkg *packageFiles) packageCheckFiles() []*ast.File {
+	if pkg.passFiles != nil {
+		return pkg.passFiles
+	}
+	return pkg.files
 }
 
 // Load walks root recursively, parses every non-test, non-vendor .go file,
@@ -109,38 +122,123 @@ func RunPlan(pkgs []*packageFiles, cfg Config, plan ExecutionPlan) ([]Issue, Exe
 	stats := newRunStats(plan, cfg)
 	all := runPackageScopedChecks(pkgs, cfg, plan, cache, stats)
 	all = append(all, runProgramScopedChecks(pkgs, cfg, plan, cache, stats)...)
-	reportRunDiagnostics(cfg, cache, pkgs)
+	reportRunDiagnostics(cfg, cache)
 	stampAnalysisRoots(all, pkgs)
-	all = filterModeUnsupported(all, pkgs, cfg.AnalysisMode)
+	owners := issueOwnerIndex(pkgs)
+	all = filterModeUnsupported(all, owners, cfg.AnalysisMode)
 	sortIssues(all)
 	all = applySuppressions(all, pkgs)
 	for index := range all {
 		packagePath := "workspace"
-		for _, pkg := range pkgs {
-			if issueBelongsToPackage(all[index], pkg) {
-				packagePath = pkg.pkgPath
-				break
-			}
+		if pkg := owners[filepath.Clean(all[index].Pos.Filename)]; pkg != nil {
+			packagePath = pkg.pkgPath
 		}
 		if all[index].Subject == "" || all[index].Identity == "" {
 			all[index].Subject, all[index].Identity = deriveIssueIdentity(all[index], packagePath)
 		}
 	}
+	disambiguateIdentities(all, owners)
 	_ = FinalizeIssues(all, "workspace")
 	return all, stats.snapshot(pkgs)
 }
 
-func issueBelongsToPackage(issue Issue, pkg *packageFiles) bool {
-	filename := filepath.Clean(issue.Pos.Filename)
-	for _, file := range pkg.files {
-		if filepath.Clean(pkg.fset.Position(file.Pos()).Filename) == filename {
-			return true
+// disambiguateIdentities qualifies findings that would otherwise share an
+// identity, such as reports on same-named methods of different receivers in
+// one file. Only colliding findings change: first by the enclosing method's
+// receiver, then by source-order occurrence. Every other fingerprint stays
+// stable, and exact duplicates are left for FinalizeIssues to reject.
+func disambiguateIdentities(issues []Issue, owners map[string]*packageFiles) {
+	groups := map[string][]int{}
+	var keys []string
+	for index := range issues {
+		key := issueIdentityKey(issues[index])
+		if len(groups[key]) == 0 {
+			keys = append(keys, key)
+		}
+		groups[key] = append(groups[key], index)
+	}
+	for _, key := range keys {
+		members := groups[key]
+		if len(members) < 2 {
+			continue
+		}
+		sort.SliceStable(members, func(i, j int) bool {
+			left, right := issues[members[i]].Pos, issues[members[j]].Pos
+			if left.Filename != right.Filename {
+				return left.Filename < right.Filename
+			}
+			return left.Offset < right.Offset
+		})
+		for _, index := range members {
+			if receiver := enclosingReceiver(issues[index], owners); receiver != "" {
+				issues[index].Identity += ";receiver=" + receiver
+			}
+		}
+		positions := map[string]map[int]bool{}
+		for _, index := range members {
+			identity, offset := issues[index].Identity, issues[index].Pos.Offset
+			if positions[identity] == nil {
+				positions[identity] = map[int]bool{}
+			}
+			if positions[identity][offset] {
+				continue
+			}
+			positions[identity][offset] = true
+			if count := len(positions[identity]); count > 1 {
+				issues[index].Identity = fmt.Sprintf("%s;occurrence=%d", identity, count)
+			}
 		}
 	}
-	return false
 }
 
-func filterModeUnsupported(issues []Issue, pkgs []*packageFiles, mode string) []Issue {
+func issueIdentityKey(issue Issue) string {
+	return issue.ID() + "\x00" + issue.PortablePath() + "\x00" + issue.Subject + "\x00" + issue.Identity
+}
+
+// enclosingReceiver names the receiver type of the method declaration that
+// contains the issue's primary position.
+func enclosingReceiver(issue Issue, owners map[string]*packageFiles) string {
+	filename := filepath.Clean(issue.Pos.Filename)
+	pkg := owners[filename]
+	if pkg == nil {
+		return ""
+	}
+	for _, file := range pkg.files {
+		if filepath.Clean(pkg.fset.Position(file.Pos()).Filename) != filename {
+			continue
+		}
+		tokenFile := pkg.fset.File(file.Pos())
+		if tokenFile == nil || issue.Pos.Offset < 0 || issue.Pos.Offset > tokenFile.Size() {
+			return ""
+		}
+		pos := tokenFile.Pos(issue.Pos.Offset)
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if ok && fn.Recv != nil && len(fn.Recv.List) > 0 && fn.Pos() <= pos && pos < fn.End() {
+				return receiverTypeName(fn.Recv.List[0].Type)
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
+// issueOwnerIndex maps each analyzed file to the first package, in load order,
+// that contains it, so per-issue ownership lookups stay constant time.
+func issueOwnerIndex(pkgs []*packageFiles) map[string]*packageFiles {
+	owners := map[string]*packageFiles{}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.files {
+			filename := filepath.Clean(pkg.fset.Position(file.Pos()).Filename)
+			if _, exists := owners[filename]; !exists {
+				owners[filename] = pkg
+			}
+		}
+	}
+	return owners
+}
+
+func filterModeUnsupported(issues []Issue, owners map[string]*packageFiles, mode string) []Issue {
 	if mode == "" {
 		mode = analysisModeAuto
 	}
@@ -153,7 +251,7 @@ func filterModeUnsupported(issues []Issue, pkgs []*packageFiles, mode string) []
 		if mode == syntaxAnalysisMode && metadata.Syntax == SyntaxUnavailable {
 			continue
 		}
-		if mode == analysisModeAuto && metadata.Syntax == SyntaxUnavailable && !issuePackageTypeComplete(issue, pkgs) {
+		if mode == analysisModeAuto && metadata.Syntax == SyntaxUnavailable && !issuePackageTypeComplete(issue, owners) {
 			continue
 		}
 		out = append(out, issue)
@@ -161,16 +259,9 @@ func filterModeUnsupported(issues []Issue, pkgs []*packageFiles, mode string) []
 	return out
 }
 
-func issuePackageTypeComplete(issue Issue, pkgs []*packageFiles) bool {
-	filename := filepath.Clean(issue.Pos.Filename)
-	for _, pkg := range pkgs {
-		for _, file := range pkg.files {
-			if filepath.Clean(pkg.fset.Position(file.Pos()).Filename) == filename {
-				return pkg.typeComplete
-			}
-		}
-	}
-	return false
+func issuePackageTypeComplete(issue Issue, owners map[string]*packageFiles) bool {
+	pkg := owners[filepath.Clean(issue.Pos.Filename)]
+	return pkg != nil && pkg.typeComplete
 }
 
 func prepareRunPackages(pkgs []*packageFiles, cfg Config) []*packageFiles {
@@ -286,16 +377,9 @@ func runProgramScopedChecks(pkgs []*packageFiles, cfg Config, plan ExecutionPlan
 	return all
 }
 
-func reportRunDiagnostics(cfg Config, cache *packageCache, pkgs []*packageFiles) {
+func reportRunDiagnostics(cfg Config, cache *packageCache) {
 	if cfg.CacheDiagnostics && cache != nil {
 		fmt.Fprintln(os.Stderr, "solidlint:", cache.diagnostics())
-	}
-	if cfg.CacheDiagnostics {
-		for _, pkg := range pkgs {
-			if pkg.filteredTypeErr != "" {
-				fmt.Fprintf(os.Stderr, "solidlint: filtered type information incomplete for %s: %s\n", pkg.pkgPath, pkg.filteredTypeErr)
-			}
-		}
 	}
 }
 

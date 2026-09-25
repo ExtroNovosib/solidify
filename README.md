@@ -39,8 +39,9 @@ solidlint -fail=false ./...
 
 Prebuilt Linux, macOS, and Windows archives for amd64 and arm64 are available
 from [GitHub Releases](https://github.com/ExtroNovosib/solidify/releases). Each
-release includes SHA-256 checksums and archive SBOMs. Prebuilt binaries do not
-require a local Go toolchain.
+release includes SHA-256 checksums and archive SBOMs. Prebuilt binaries install
+without a Go toolchain, but solidlint loads packages through the `go` command,
+so Go must be on `PATH` when it runs.
 
 For GitHub Actions, keep installation and enforcement explicit:
 
@@ -122,7 +123,8 @@ findings, while type switches remain OCP findings.
 Type-level SRP metrics aggregate receivers across every file in a package. A
 `.go` target is therefore a package selector: `./solidlint internal/cli/run.go`
 analyzes the complete `internal/cli` package. Directory targets retain their
-recursive behavior.
+recursive behavior, and relative patterns such as `./...` resolve from the
+current directory, as they do for `go list`.
 
 ## Output
 
@@ -188,7 +190,11 @@ the expected findings and the clean corpus produces none.
 JSON is strict schema version 3. Each result has `fingerprintVersion: 4`, a
 stable rule `id`, `maturity`, `subject`, `identity`, `severity`, `evidence`,
 source location, and a portable fingerprint that survives
-checkout-path and line-only changes. Repository paths in JSON and SARIF are
+checkout-path and line-only changes. When two findings of one check in one file
+would share an identity, such as reports on same-named methods of different
+receivers, only those identities gain a `receiver=` qualifier, or a
+source-order `occurrence=` qualifier when no receiver tells them apart.
+Repository paths in JSON and SARIF are
 relative to the containing module root; external files are kept unambiguous.
 Text output may show absolute filesystem paths for local readability; JSON and
 SARIF default to portable relative paths. External findings preserve an
@@ -257,6 +263,13 @@ such as unclosed `[` are rejected at configuration load by
 `ValidateExcludePatterns` instead of being treated as silent non-matches.
 Excluded files are removed before metrics and related-location construction, so
 they do not affect SRP aggregates or related locations on included findings.
+Their declarations are also removed from type information by re-type-checking
+the affected packages and their importers. When the remaining files cannot be
+type-checked without them, solidlint keeps the loaded type information and
+prints a warning rather than disabling type-based checks. Generated files (with
+a standard `// Code generated ... DO NOT EDIT.` header) are never reported and
+do not count toward SRP metrics, but their declarations stay part of type
+information because handwritten code routinely uses them.
 
 Accepted DIP debt and other intentional findings can be baselined with review
 metadata:
@@ -293,10 +306,12 @@ remains live. The default `-baseline-expired=warn` reports that condition;
 The default package and program-group cache is stored in the platform user
 cache, namespaced by the analysis root. Use `-cache-dir` to relocate it or
 `-cache=false` to disable it. `-cache-debug` prints cache diagnostics to stderr.
+Entries are keyed by the exact solidlint build, so development builds never
+reuse each other's results.
 Syntax analysis does not request type, dependency, or export-file metadata.
-For typed analysis, source manifests and filtered type snapshots are rebuilt
-only when generated-file removal or an exclusion actually changes a package;
-otherwise the loader snapshot is reused unchanged.
+For typed analysis, only packages that lose excluded files, plus their
+importers, are re-type-checked; every other package reuses the loader snapshot
+unchanged.
 `solidlint --help` lists the available commands and common invocations.
 `solidlint checks explain <id>` reports the check's documentation link,
 configuration keys, remediation guidance, a compact before/after example, and

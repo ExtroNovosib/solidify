@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"hash"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,11 +18,10 @@ import (
 
 // Bump the version when cache-key semantics change so entries produced by an
 // older solidlint cannot be reused with the new analyzer.
-const cacheVersion = "solidlint-cache-v9"
+const cacheVersion = "solidlint-cache-v10"
 
 type packageCache struct {
 	root        string
-	enabled     string
 	config      string
 	version     string
 	hits        atomic.Int64
@@ -32,26 +32,42 @@ type packageCache struct {
 	loadNanos   atomic.Int64
 	sourceReads atomic.Int64
 	hashes      sync.Map
+	apiDigests  sync.Map
 }
 
 func newPackageCache(root string, cfg Config, plan ExecutionPlan) *packageCache {
-	selected := plan.SelectedCheckIDs()
-	selectedNames := make([]string, len(selected))
-	for index, id := range selected {
-		selectedNames[index] = string(id)
-	}
+	// Cache location and diagnostics do not affect findings; keying on them
+	// would make -cache-debug report a cold cache after every normal run.
+	keyConfig := cfg
+	keyConfig.CacheDir, keyConfig.CacheEnabled, keyConfig.CacheDiagnostics = "", false, false
 	configData, _ := json.Marshal(struct {
 		Config       Config
 		PlanIdentity string
-	}{cfg, plan.Identity()})
+		Build        string
+	}{keyConfig, plan.Identity(), executableDigest()})
 	sum := sha256.Sum256(configData)
 	return &packageCache{
 		root:    filepath.Clean(root),
-		enabled: strings.Join(selectedNames, ","),
 		config:  fmt.Sprintf("%x", sum[:8]),
 		version: cfg.ToolVersion,
 	}
 }
+
+// executableDigest identifies the running analyzer build. Version strings do
+// not: test binaries and unversioned builds all report "dev", and dirty builds
+// of one commit share a pseudo-version, so they would reuse each other's
+// findings after an analyzer change.
+var executableDigest = sync.OnceValue(func() string {
+	path, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	digest, err := fileContentDigest(path)
+	if err != nil {
+		return ""
+	}
+	return digest
+})
 
 func (c *packageCache) load(pkg *packageFiles, checkID CheckID) ([]Issue, bool) {
 	if c == nil || pkg == nil {
@@ -137,11 +153,9 @@ func (c *packageCache) storeEntry(path, hash string, issues []Issue) {
 		_ = tmp.Close()
 		return
 	}
+	// No fsync: a torn or empty entry fails decoding or hash validation and is
+	// recomputed, while syncing every entry dominated cold-cache runs.
 	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return
-	}
-	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		return
 	}
@@ -160,7 +174,7 @@ func (c *packageCache) entryPath(pkg *packageFiles, checkID CheckID) string {
 	if key == "" {
 		key = strings.NewReplacer("/", "_", "\\", "_").Replace(pkg.dir)
 	}
-	return filepath.Join(c.root, "entries", c.enabled, c.config, string(checkID), key+".json")
+	return filepath.Join(c.root, "entries", c.config, string(checkID), key+".json")
 }
 
 func (c *packageCache) loadProgram(pkgs []*packageFiles, group ExecutionGroup) ([]Issue, bool) {
@@ -205,7 +219,7 @@ func (c *packageCache) storeProgram(pkgs []*packageFiles, group ExecutionGroup, 
 }
 
 func (c *packageCache) programEntryPath(group ExecutionGroup) string {
-	return filepath.Join(c.root, "entries", c.enabled, c.config, "program", group.Name+".json")
+	return filepath.Join(c.root, "entries", c.config, "program", group.Name+".json")
 }
 
 func (c *packageCache) programHash(pkgs []*packageFiles) string {
@@ -234,7 +248,18 @@ func (c *packageCache) packageHash(pkg *packageFiles) string {
 	h.Write([]byte{0})
 	h.Write([]byte(c.dependencyAPIDigest(pkg)))
 	h.Write([]byte{0})
-	files := append([]*ast.File(nil), pkg.files...)
+	c.writeSourceDigests(h, pkg, pkg.files)
+	// Generated and excluded files are not analyzed, but their declarations
+	// can still shape the package's type information.
+	h.Write([]byte("removed\x00"))
+	c.writeSourceDigests(h, pkg, pkg.removedFiles)
+	result := fmt.Sprintf("%x", h.Sum(nil))
+	actual, _ := c.hashes.LoadOrStore(pkg, result)
+	return actual.(string)
+}
+
+func (c *packageCache) writeSourceDigests(h hash.Hash, pkg *packageFiles, files []*ast.File) {
+	files = append([]*ast.File(nil), files...)
 	sort.Slice(files, func(i, j int) bool {
 		return pkg.fset.Position(files[i].Pos()).Filename < pkg.fset.Position(files[j].Pos()).Filename
 	})
@@ -257,9 +282,6 @@ func (c *packageCache) packageHash(pkg *packageFiles) string {
 		}
 		h.Write([]byte{0})
 	}
-	result := fmt.Sprintf("%x", h.Sum(nil))
-	actual, _ := c.hashes.LoadOrStore(pkg, result)
-	return actual.(string)
 }
 
 func (c *packageCache) sourceDigest(filename string) (string, error) {
@@ -278,8 +300,9 @@ func fileContentDigest(filename string) (string, error) {
 
 func (c *packageCache) dependencyAPIDigest(pkg *packageFiles) string {
 	h := sha256.New()
-	paths := append([]string(nil), pkg.imports...)
+	paths := append(append([]string(nil), pkg.imports...), importsFromSyntax(pkg.removedFiles)...)
 	sort.Strings(paths)
+	paths = uniqueStrings(paths)
 	for _, path := range paths {
 		h.Write([]byte(path))
 		h.Write([]byte{0})
@@ -287,21 +310,35 @@ func (c *packageCache) dependencyAPIDigest(pkg *packageFiles) string {
 		if imported == nil {
 			continue
 		}
-		names := append([]string(nil), imported.Scope().Names()...)
-		sort.Strings(names)
-		for _, name := range names {
-			object := imported.Scope().Lookup(name)
-			h.Write([]byte(name))
-			h.Write([]byte{'='})
-			if object != nil {
-				h.Write([]byte(types.ObjectString(object, func(owner *types.Package) string { return owner.Path() })))
-				writeNamedTypeMethodSets(h, object)
-			}
-			h.Write([]byte{0})
-		}
+		h.Write([]byte(c.importedAPIDigest(imported)))
+		h.Write([]byte{0})
 	}
 	h.Write([]byte(pkg.dependencyFacts))
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// importedAPIDigest summarizes an imported package's exported API once per
+// run; many analyzed packages share the same imports.
+func (c *packageCache) importedAPIDigest(imported *types.Package) string {
+	if cached, ok := c.apiDigests.Load(imported); ok {
+		return cached.(string)
+	}
+	h := sha256.New()
+	names := append([]string(nil), imported.Scope().Names()...)
+	sort.Strings(names)
+	for _, name := range names {
+		object := imported.Scope().Lookup(name)
+		h.Write([]byte(name))
+		h.Write([]byte{'='})
+		if object != nil {
+			h.Write([]byte(types.ObjectString(object, func(owner *types.Package) string { return owner.Path() })))
+			writeNamedTypeMethodSets(h, object)
+		}
+		h.Write([]byte{0})
+	}
+	digest := fmt.Sprintf("%x", h.Sum(nil))
+	actual, _ := c.apiDigests.LoadOrStore(imported, digest)
+	return actual.(string)
 }
 
 // writeNamedTypeMethodSets includes both method sets because ObjectString for a

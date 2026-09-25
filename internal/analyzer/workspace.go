@@ -3,6 +3,7 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/token"
 	"go/types"
 	"os"
@@ -305,70 +306,64 @@ func canonicalRoot(pkgs []*packageFiles) string {
 // FilterExcludedFiles applies configured excludes before any package or
 // program-level check computes metrics, correlations, or related locations.
 func FilterExcludedFiles(pkgs []*packageFiles, patterns []string) []*packageFiles {
-	if len(patterns) == 0 {
-		return pkgs
-	}
-	out := pkgs[:0]
-	filteredFacts := map[string]string{}
-	for _, pkg := range pkgs {
-		if pkg == nil {
-			continue
-		}
-		included := make([]*ast.File, 0, len(pkg.files))
-		for _, file := range pkg.files {
-			filename := pkg.fset.Position(file.Pos()).Filename
-			relative := PortablePath(pkg.analysisRoot, filename)
-			if Excluded(relative, patterns) || Excluded(filename, patterns) {
-				continue
-			}
-			included = append(included, file)
-		}
-		pkg.files = included
-		pkg.imports = importsFromSyntax(pkg.files)
-		filteredFacts[pkg.pkgPath] = sourceFactManifest(pkg)
-		if len(pkg.files) > 0 {
-			out = append(out, pkg)
-		}
-	}
-	recomputeDependencyFacts(out, filteredFacts)
-	rebuildFilteredTypeSnapshots(out)
-	return out
+	return applyFilePolicy(pkgs, patterns, false)
 }
 
-// ApplyWorkspaceFilePolicy removes generated and configured-excluded files in
-// one mutation, then recomputes dependency facts and typed snapshots once.
+// ApplyWorkspaceFilePolicy removes generated and configured-excluded files
+// from analysis in one mutation, then recomputes dependency facts once.
+// Generated declarations stay in the loaded type information because
+// handwritten code routinely uses them; only exclusions re-type-check.
 func ApplyWorkspaceFilePolicy(pkgs []*packageFiles, patterns []string) []*packageFiles {
+	return applyFilePolicy(pkgs, patterns, true)
+}
+
+func applyFilePolicy(pkgs []*packageFiles, patterns []string, removeGenerated bool) []*packageFiles {
 	out := pkgs[:0]
 	changed := false
+	var lostExcludedFiles []*packageFiles
 	for _, pkg := range pkgs {
 		if pkg == nil {
 			continue
 		}
-		if !packageNeedsWorkspaceFilePolicy(pkg, patterns) {
+		if !packageNeedsFilePolicy(pkg, patterns, removeGenerated) {
 			out = append(out, pkg)
 			continue
 		}
 		changed = true
-		included := make([]*ast.File, 0, len(pkg.files))
-		for _, file := range pkg.files {
-			filename := pkg.fset.Position(file.Pos()).Filename
-			relative := PortablePath(pkg.analysisRoot, filename)
-			if pkg.generated[file] || Excluded(relative, patterns) || Excluded(filename, patterns) {
-				continue
+		passFiles := make([]*ast.File, 0, len(pkg.files))
+		for _, file := range pkg.packageCheckFiles() {
+			if !fileExcluded(pkg, file, patterns) {
+				passFiles = append(passFiles, file)
 			}
-			included = append(included, file)
+		}
+		included := make([]*ast.File, 0, len(pkg.files))
+		excluded := false
+		for _, file := range pkg.files {
+			switch {
+			case removeGenerated && pkg.generated[file]:
+				pkg.removedFiles = append(pkg.removedFiles, file)
+			case fileExcluded(pkg, file, patterns):
+				pkg.removedFiles = append(pkg.removedFiles, file)
+				excluded = true
+			default:
+				included = append(included, file)
+			}
 		}
 		pkg.files = included
+		pkg.passFiles = passFiles
 		pkg.imports = importsFromSyntax(pkg.files)
 		if len(pkg.files) > 0 {
 			out = append(out, pkg)
+			if excluded {
+				lostExcludedFiles = append(lostExcludedFiles, pkg)
+			}
 		}
 	}
 	if !changed {
 		return pkgs
 	}
 	recomputeDependencyFacts(out, dependencyFactManifests(out))
-	rebuildFilteredTypeSnapshots(out)
+	rebuildExcludedTypeSnapshots(out, lostExcludedFiles)
 	return out
 }
 
@@ -376,23 +371,27 @@ func ApplyWorkspaceFilePolicy(pkgs []*packageFiles, patterns []string) []*packag
 // configured exclusion will mutate a package. The common no-op path avoids
 // source manifests and filtered type-snapshot rebuilding altogether.
 func packageNeedsWorkspaceFilePolicy(pkg *packageFiles, patterns []string) bool {
+	return packageNeedsFilePolicy(pkg, patterns, true)
+}
+
+func packageNeedsFilePolicy(pkg *packageFiles, patterns []string, removeGenerated bool) bool {
 	if pkg == nil {
 		return false
 	}
 	for _, file := range pkg.files {
-		if pkg.generated[file] {
-			return true
-		}
-		if len(patterns) == 0 {
-			continue
-		}
-		filename := pkg.fset.Position(file.Pos()).Filename
-		relative := PortablePath(pkg.analysisRoot, filename)
-		if Excluded(relative, patterns) || Excluded(filename, patterns) {
+		if removeGenerated && pkg.generated[file] || fileExcluded(pkg, file, patterns) {
 			return true
 		}
 	}
 	return false
+}
+
+func fileExcluded(pkg *packageFiles, file *ast.File, patterns []string) bool {
+	if len(patterns) == 0 {
+		return false
+	}
+	filename := pkg.fset.Position(file.Pos()).Filename
+	return Excluded(PortablePath(pkg.analysisRoot, filename), patterns) || Excluded(filename, patterns)
 }
 
 func dependencyFactManifests(pkgs []*packageFiles) map[string]string {
@@ -429,15 +428,88 @@ func recomputeDependencyFacts(pkgs []*packageFiles, filteredFacts map[string]str
 	}
 }
 
-// rebuildFilteredTypeSnapshots ensures that the AST, types.Info, and
-// types.Package views describe exactly the same included files. Reusing the
-// original go/packages type snapshot after filtering would leave declarations
-// and method sets from excluded or generated files visible to typed checks.
-func rebuildFilteredTypeSnapshots(pkgs []*packageFiles) {
-	builder := newFilteredSnapshotBuilder(pkgs)
-	for _, pkg := range pkgs {
+// rebuildExcludedTypeSnapshots makes the AST, types.Info, and types.Package
+// views of packages that lost excluded files describe exactly the included
+// files, so excluded declarations and methods stay invisible to typed checks.
+// Every package that transitively imports a rebuilt one is re-checked too, so
+// type identities still come from one graph; all other packages keep their
+// loaded snapshot. When the included files do not type-check on their own,
+// the loaded snapshots are restored and the package reports a warning instead
+// of silently losing its typed checks.
+func rebuildExcludedTypeSnapshots(pkgs []*packageFiles, changed []*packageFiles) {
+	if len(changed) == 0 {
+		return
+	}
+	targets := typeRebuildTargets(pkgs, changed)
+	type loadedSnapshot struct {
+		info     *types.Info
+		typePkg  *types.Package
+		complete bool
+	}
+	loaded := make(map[*packageFiles]loadedSnapshot, len(targets))
+	for _, pkg := range targets {
+		loaded[pkg] = loadedSnapshot{info: pkg.info, typePkg: pkg.typePkg, complete: pkg.typeComplete}
+	}
+	builder := newFilteredSnapshotBuilder(targets)
+	for _, pkg := range targets {
 		builder.rebuild(pkg)
 	}
+	firstFailure := func(candidates []*packageFiles) *packageFiles {
+		for _, pkg := range candidates {
+			if loaded[pkg].complete && !pkg.typeComplete {
+				return pkg
+			}
+		}
+		return nil
+	}
+	// Importers of a failed package fail too; name the root cause.
+	failure := firstFailure(changed)
+	if failure == nil {
+		failure = firstFailure(targets)
+	}
+	if failure == nil {
+		return
+	}
+	reason := failure.filteredTypeErr
+	// A partial rebuild would mix identities from both graphs, so every
+	// target returns to its loaded snapshot together.
+	for _, pkg := range targets {
+		snapshot := loaded[pkg]
+		pkg.info, pkg.typePkg, pkg.typeComplete = snapshot.info, snapshot.typePkg, snapshot.complete
+		pkg.filteredTypeErr = ""
+	}
+	failure.filteredTypeErr = reason
+}
+
+// typeRebuildTargets returns, in load order, the packages that lost excluded
+// files plus every package that transitively imports one of them.
+func typeRebuildTargets(pkgs []*packageFiles, changed []*packageFiles) []*packageFiles {
+	rebuilt := make(map[string]bool, len(changed))
+	for _, pkg := range changed {
+		rebuilt[pkg.pkgPath] = true
+	}
+	for grew := true; grew; {
+		grew = false
+		for _, pkg := range pkgs {
+			if rebuilt[pkg.pkgPath] {
+				continue
+			}
+			for path := range pkg.typeImports {
+				if rebuilt[path] {
+					rebuilt[pkg.pkgPath] = true
+					grew = true
+					break
+				}
+			}
+		}
+	}
+	targets := make([]*packageFiles, 0, len(rebuilt))
+	for _, pkg := range pkgs {
+		if rebuilt[pkg.pkgPath] {
+			targets = append(targets, pkg)
+		}
+	}
+	return targets
 }
 
 type filteredSnapshotBuilder struct {
@@ -446,6 +518,8 @@ type filteredSnapshotBuilder struct {
 	state  map[string]uint8
 }
 
+// newFilteredSnapshotBuilder rebuilds only the given packages; imports of any
+// other package resolve to its loaded snapshot.
 func newFilteredSnapshotBuilder(pkgs []*packageFiles) *filteredSnapshotBuilder {
 	byPath := make(map[string]*packageFiles, len(pkgs))
 	for _, pkg := range pkgs {
@@ -583,7 +657,17 @@ func workspacePatterns(paths []string) ([]string, error) {
 			path = "."
 		}
 		if strings.HasSuffix(path, "/...") || strings.HasSuffix(path, string(filepath.Separator)+"...") {
-			patterns = append(patterns, filepath.ToSlash(path))
+			pattern := filepath.ToSlash(path)
+			// go/packages runs from the module root, so a relative pattern
+			// such as ./... must be anchored to the caller's directory first.
+			if prefix := strings.TrimSuffix(pattern, "/..."); build.IsLocalImport(prefix) {
+				absolute, err := filepath.Abs(filepath.FromSlash(prefix))
+				if err != nil {
+					return nil, err
+				}
+				pattern = filepath.ToSlash(absolute) + "/..."
+			}
+			patterns = append(patterns, pattern)
 			continue
 		}
 		if info, err := os.Stat(path); err == nil {

@@ -21,23 +21,26 @@ func checkISPStubImplementation(fset *token.FileSet, files []*ast.File, info *ty
 			if !ok || fn.Recv == nil || fn.Body == nil {
 				continue
 			}
+			// The stub shape is a cheap syntactic test; the interface lookup
+			// scans every package definition, so it runs only for stubs.
+			stmt, kind := stubStatement(fn.Body, info)
+			if stmt == nil {
+				continue
+			}
 			ifaceName, ok := qualifyingInterfaceForMethod(fn, info, cfg.ISPMinMethods)
 			if !ok {
 				continue
 			}
-			if stmt, kind := stubStatement(fn.Body, info); stmt != nil {
-				issue := issueAt(fset, fn, Issue{
-					Rule:     RuleISP,
-					Check:    CheckISPStubImplementation,
-					Severity: SeverityWarning,
-					Message: fmt.Sprintf(
-						"method %q %s on interface %q: the type is forced to satisfy an operation it does not meaningfully support; split the interface so implementers only declare what they support",
-						fn.Name.Name, kind, ifaceName,
-					),
-					Evidence: fmt.Sprintf("stub-implementation:method=%s;interface=%s;kind=%s", fn.Name.Name, ifaceName, kind),
-				})
-				issues = append(issues, issue)
-			}
+			issues = append(issues, issueAt(fset, fn, Issue{
+				Rule:     RuleISP,
+				Check:    CheckISPStubImplementation,
+				Severity: SeverityWarning,
+				Message: fmt.Sprintf(
+					"method %q %s on interface %q: the type is forced to satisfy an operation it does not meaningfully support; split the interface so implementers only declare what they support",
+					fn.Name.Name, kind, ifaceName,
+				),
+				Evidence: fmt.Sprintf("stub-implementation:method=%s;interface=%s;kind=%s", fn.Name.Name, ifaceName, kind),
+			}))
 		}
 	}
 	return issues

@@ -33,6 +33,34 @@ func TestWorkspacePackagesLoadModeAvoidsExportFileMetadata(t *testing.T) {
 	}
 }
 
+func TestRelativeRecursivePatternStaysInCallerDirectory(t *testing.T) {
+	root := t.TempDir()
+	initTempModule(t, root)
+	for _, name := range []string{"a", "b"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writePolicyFixture(t, filepath.Join(root, name, name+".go"), "package "+name+"\n")
+	}
+	t.Chdir(filepath.Join(root, "a"))
+
+	pkgs, _, err := LoadWorkspace([]string{"./..."}, false, syntaxAnalysisMode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, pkg := range pkgs {
+		paths = append(paths, pkg.pkgPath)
+	}
+	if strings.Join(paths, ",") != "tempmod/a" {
+		t.Fatalf("./... from tempmod/a loaded %v, want only tempmod/a", paths)
+	}
+	patterns, err := workspacePatterns([]string{"example.com/mod/..."})
+	if err != nil || len(patterns) != 1 || patterns[0] != "example.com/mod/..." {
+		t.Fatalf("import-path pattern rewritten: %v, %v", patterns, err)
+	}
+}
+
 func TestWorkspaceLoadRequirementsFollowSelectedChecks(t *testing.T) {
 	only := func(id CheckID) ExecutionPlan {
 		t.Helper()

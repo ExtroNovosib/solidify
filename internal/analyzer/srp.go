@@ -149,16 +149,28 @@ type parameterClump struct {
 
 func buildParameterClumps(parameterProfiles []*functionParameterProfile, cfg Config) map[string]*parameterClump {
 	clumps := map[string]*parameterClump{}
+	// Shared parameters are drawn from the right-hand profile, so only a
+	// profile with more than MaxFuncParams parameters can complete a clump.
+	// Visiting just those keeps the pairwise scan near-linear for ordinary
+	// packages while preserving the original pair order.
+	var rightCandidates []int
+	for index, profile := range parameterProfiles {
+		if !profile.reported && len(profile.parameters) > cfg.MaxFuncParams {
+			rightCandidates = append(rightCandidates, index)
+		}
+	}
 	for i, left := range parameterProfiles {
 		if left.reported {
 			continue
 		}
-		for j := i + 1; j < len(parameterProfiles); j++ {
+		start := sort.SearchInts(rightCandidates, i+1)
+		if start == len(rightCandidates) {
+			continue
+		}
+		leftKeys := parameterKeySet(left)
+		for _, j := range rightCandidates[start:] {
 			right := parameterProfiles[j]
-			if right.reported {
-				continue
-			}
-			shared := sharedParameters(left, right)
+			shared := sharedParameters(leftKeys, right)
 			if len(shared) <= cfg.MaxFuncParams {
 				continue
 			}
@@ -204,7 +216,9 @@ func clumpToIssues(fset *token.FileSet, clumps map[string]*parameterClump) []Iss
 		if len(candidate.funcs) < 2 {
 			continue
 		}
-		sort.Slice(candidate.funcs, func(i, j int) bool { return candidate.funcs[i].pos < candidate.funcs[j].pos })
+		sort.Slice(candidate.funcs, func(i, j int) bool {
+			return sourceOrderLess(fset, candidate.funcs[i].pos, candidate.funcs[j].pos)
+		})
 		current := candidate.funcs[len(candidate.funcs)-1]
 		peer := candidate.funcs[0]
 		if current == peer {
@@ -376,11 +390,15 @@ func expressionUsesParameter(expr ast.Expr, parameter functionParameter) bool {
 	return used
 }
 
-func sharedParameters(left, right *functionParameterProfile) []functionParameter {
-	leftKeys := make(map[string]bool, len(left.parameters))
-	for _, parameter := range left.parameters {
-		leftKeys[parameter.name+"\x00"+parameter.typeKey] = true
+func parameterKeySet(profile *functionParameterProfile) map[string]bool {
+	keys := make(map[string]bool, len(profile.parameters))
+	for _, parameter := range profile.parameters {
+		keys[parameter.name+"\x00"+parameter.typeKey] = true
 	}
+	return keys
+}
+
+func sharedParameters(leftKeys map[string]bool, right *functionParameterProfile) []functionParameter {
 	var shared []functionParameter
 	for _, parameter := range right.parameters {
 		if leftKeys[parameter.name+"\x00"+parameter.typeKey] {

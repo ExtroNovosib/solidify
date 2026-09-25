@@ -310,20 +310,20 @@ func IsKnownSeverityTarget(key string) bool {
 
 func runSRPCheck(pkg *packageFiles, cfg Config) []Issue {
 	return CheckSRPWithTypes(SRPCheckInput{
-		Fset: pkg.fset, Files: pkg.files, Info: pkg.info,
+		Fset: pkg.fset, Files: pkg.packageCheckFiles(), Info: pkg.info,
 		Pkg: pkg.typePkg, TypeComplete: pkg.typeComplete, Config: cfg,
 		PkgFiles: pkg,
 	})
 }
 
 func runLSPPackageCheck(pkg *packageFiles, cfg Config) []Issue {
-	return CheckLSPWithTypes(pkg.fset, pkg.files, pkg.info, cfg, pkg)
+	return CheckLSPWithTypes(pkg.fset, pkg.packageCheckFiles(), pkg.info, cfg, pkg)
 }
 
 func runISPCheck(pkg *packageFiles, cfg Config) []Issue {
-	return CheckISPWithTypes(pkg.fset, pkg.files, pkg.info, cfg, pkg)
+	return CheckISPWithTypes(pkg.fset, pkg.packageCheckFiles(), pkg.info, cfg, pkg)
 }
 
 func runDIPPackageCheck(pkg *packageFiles, cfg Config) []Issue {
-	return CheckDIPWithTypes(pkg.fset, pkg.files, pkg.info, cfg, pkg)
+	return CheckDIPWithTypes(pkg.fset, pkg.packageCheckFiles(), pkg.info, cfg, pkg)
 }

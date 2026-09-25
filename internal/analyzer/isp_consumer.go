@@ -431,7 +431,9 @@ func eligibleOwnedInterface(t types.Type, info *types.Info, pkg *packageFiles) b
 }
 
 type dependencyFieldFlows struct {
+	files     []*ast.File
 	info      *types.Info
+	indexed   bool
 	parents   map[ast.Node]ast.Node
 	selectors map[*types.Var][]*ast.SelectorExpr
 	memo      map[*types.Var]bool
@@ -439,34 +441,54 @@ type dependencyFieldFlows struct {
 }
 
 func newDependencyFieldFlows(files []*ast.File, info *types.Info) *dependencyFieldFlows {
-	flows := &dependencyFieldFlows{
-		info:      info,
-		parents:   map[ast.Node]ast.Node{},
-		selectors: map[*types.Var][]*ast.SelectorExpr{},
-		memo:      map[*types.Var]bool{},
-		visiting:  map[*types.Var]bool{},
+	return &dependencyFieldFlows{
+		files:    files,
+		info:     info,
+		memo:     map[*types.Var]bool{},
+		visiting: map[*types.Var]bool{},
 	}
-	for _, file := range files {
-		for node, parent := range astParentIndex(file) {
-			flows.parents[node] = parent
-		}
+}
+
+// index records field selectors plus the parents flowDestination inspects
+// (selectors and key-value pairs) in one walk. It runs on first use, so a
+// package without candidate fields never walks its syntax.
+func (flows *dependencyFieldFlows) index() {
+	if flows.indexed {
+		return
+	}
+	flows.indexed = true
+	flows.parents = map[ast.Node]ast.Node{}
+	flows.selectors = map[*types.Var][]*ast.SelectorExpr{}
+	for _, file := range flows.files {
+		var stack []ast.Node
 		ast.Inspect(file, func(node ast.Node) bool {
-			selector, ok := node.(*ast.SelectorExpr)
-			if !ok {
-				return true
+			if node == nil {
+				stack = stack[:len(stack)-1]
+				return false
 			}
-			field, ok := selectionObject(info, selector).(*types.Var)
-			if !ok || !field.IsField() {
-				return true
+			switch current := node.(type) {
+			case *ast.SelectorExpr:
+				flows.recordParent(current, stack)
+				if field, ok := selectionObject(flows.info, current).(*types.Var); ok && field.IsField() {
+					flows.selectors[field] = append(flows.selectors[field], current)
+				}
+			case *ast.KeyValueExpr:
+				flows.recordParent(current, stack)
 			}
-			flows.selectors[field] = append(flows.selectors[field], selector)
+			stack = append(stack, node)
 			return true
 		})
 	}
-	return flows
+}
+
+func (flows *dependencyFieldFlows) recordParent(node ast.Node, stack []ast.Node) {
+	if len(stack) > 0 {
+		flows.parents[node] = stack[len(stack)-1]
+	}
 }
 
 func (flows *dependencyFieldFlows) consumed(field *types.Var) bool {
+	flows.index()
 	if value, ok := flows.memo[field]; ok {
 		return value
 	}

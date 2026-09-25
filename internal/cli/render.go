@@ -74,5 +74,8 @@ func renderStats(stats analyzer.ExecutionStats, format string) error {
 	for _, coverage := range stats.CheckCoverage {
 		fmt.Printf("check %s status=%s reason=%s\n", coverage.Check, coverage.Status, coverage.Reason)
 	}
+	for _, warning := range stats.Warnings {
+		fmt.Printf("warning %s\n", warning)
+	}
 	return nil
 }

@@ -137,6 +137,28 @@ func Third(a, b, c, d, e, f, g, h, i string) {}
 	}
 }
 
+func TestCheckSRP_DataClumpSkipsFunctionsAtParameterLimit(t *testing.T) {
+	fset, files := parseSource(t, `package p
+
+func Short(name, email string) {}
+func First(name, email, phone string) {}
+func Between(name, email string) {}
+func Second(name, email, phone string) {}
+`)
+	cfg := DefaultConfig()
+	cfg.MaxFuncParams = 2
+
+	var clumps []Issue
+	for _, issue := range CheckSRP(fset, files, cfg) {
+		if issue.Check == CheckSRPDataClump {
+			clumps = append(clumps, issue)
+		}
+	}
+	if len(clumps) != 1 || len(clumps[0].Groups) != 1 || strings.Join(clumps[0].Groups[0].Symbols, ",") != "First,Second" {
+		t.Fatalf("expected one clump of First and Second, got %v", clumps)
+	}
+}
+
 func TestCheckSRP_BooleanFlagSelectsBehavior(t *testing.T) {
 	fset, files := parseSource(t, `package p
 

@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 )
@@ -41,6 +42,8 @@ type ExecutionStats struct {
 	Groups         []GroupExecutionStats  `json:"groups"`
 	Packages       []PackageAnalysisStats `json:"packages"`
 	CheckCoverage  []CheckCoverageStats   `json:"checkCoverage"`
+	// Warnings describe degraded analysis inputs that did not stop the run.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type runStats struct {
@@ -109,6 +112,12 @@ func (s *runStats) snapshot(pkgs []*packageFiles) ExecutionStats {
 			continue
 		}
 		result.Packages = append(result.Packages, PackageAnalysisStats{Package: pkg.pkgPath, TypeComplete: pkg.typeComplete})
+		if pkg.filteredTypeErr != "" {
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"%s: excluded files could not be removed from type information (%s); their declarations stay visible to type-based checks",
+				pkg.pkgPath, pkg.filteredTypeErr,
+			))
+		}
 	}
 	for _, check := range checkRegistry {
 		result.CheckCoverage = append(result.CheckCoverage, checkCoverageFor(check, s.plan, s.config, pkgs))

@@ -3,11 +3,8 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/token"
 	"go/types"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -535,18 +532,6 @@ func isStdlibConcreteType(t types.Type) bool {
 		return false
 	}
 	return isStdlibPackage(n.Obj().Pkg())
-}
-
-func isStdlibPackage(pkg *types.Package) bool {
-	if pkg == nil {
-		return false
-	}
-	path := pkg.Path()
-	if path == "" || strings.Contains(path, ".") {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(build.Default.GOROOT, "src", path))
-	return err == nil && info.IsDir()
 }
 
 func isConcreteType(t types.Type) bool {

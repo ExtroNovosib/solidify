@@ -86,8 +86,13 @@ vulncheck:
 fmt:
 	$(GO) fmt ./...
 
+# Uses only find and gofmt so a missing tool cannot turn the check into a
+# vacuous pass; gofmt parse errors fail the target as well.
 fmt-check:
-	@test -z "$$(rg --files -g '*.go' -g '!graphify-out/**' -g '!.cache/**' -g '!testdata/**' -g '!internal/analysisapi/testdata/**' | xargs gofmt -l)"
+	@files="$$(find . \( -path './.*' -o -path ./bin -o -path ./dist -o -path ./graphify-out -o -path ./testdata -o -path ./internal/analysisapi/testdata \) -prune -o -name '*.go' -print)"; \
+		test -n "$$files" || { echo "fmt-check found no Go files" >&2; exit 1; }; \
+		unformatted="$$(gofmt -l $$files)" || exit 1; \
+		test -z "$$unformatted" || { echo "gofmt would change:" >&2; echo "$$unformatted" >&2; exit 1; }
 
 golangci-lint:
 	$(GOLANGCI_LINT) run $(QUALITY_PKG)

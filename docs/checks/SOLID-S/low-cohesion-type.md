@@ -10,6 +10,7 @@ Example: scan the package directory and review the reported evidence before supp
 - Analysis modes: types required; withheld in syntax and incomplete-auto packages.
 - Surfaces: standalone CLI, module plugin, and matched-ABI Go plugin.
 - Evidence names the matched source construct; metrics record measured values, configured thresholds, and comparators. Fingerprints use the check ID, portable path, subject, and identity, never the message or measured counts.
+- LCOM4 joins two methods when they access a shared receiver field or one calls the other, in either declaration order. Components are numbered in source order (filename, then position), independent of package load order.
 
 ## Examples
 

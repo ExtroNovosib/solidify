@@ -14,6 +14,20 @@ func positionRange(fset *token.FileSet, node ast.Node) (start, end token.Positio
 	return start, end
 }
 
+// sourceOrderLess orders positions by filename and then offset. Raw token.Pos
+// values also encode the order in which go/packages happened to parse a
+// package's files, which varies between runs.
+func sourceOrderLess(fset *token.FileSet, left, right token.Pos) bool {
+	if fset == nil {
+		return left < right
+	}
+	leftPosition, rightPosition := fset.Position(left), fset.Position(right)
+	if leftPosition.Filename != rightPosition.Filename {
+		return leftPosition.Filename < rightPosition.Filename
+	}
+	return leftPosition.Offset < rightPosition.Offset
+}
+
 func issueAt(fset *token.FileSet, node ast.Node, issue Issue) Issue {
 	start, end := positionRange(fset, node)
 	issue.Pos = start

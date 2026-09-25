@@ -2,7 +2,7 @@
 
 ## Repository overview
 
-- This repository contains `solidlint`, a Go 1.22 CLI and golangci-lint plugin for detecting explainable SOLID design smells.
+- This repository contains `solidlint`, a Go 1.25 CLI and golangci-lint plugin for detecting explainable SOLID design smells.
 - Treat findings as heuristics. Preserve stable rule IDs, severities, evidence, source locations, fingerprints, and existing text, JSON, and SARIF behavior unless the task explicitly changes them.
 - Read `README.md` and the relevant implementation and tests before changing analyzer behavior.
 

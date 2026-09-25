@@ -175,6 +175,80 @@ func (h *CreateTunnelHandler) RightTwo() { _ = h.right }
 	}
 }
 
+// go/packages parses a package's files concurrently into one FileSet, so a
+// later file can receive lower token.Pos values. Parse b.go first to pin that
+// order and require source order (filename, then offset) regardless.
+func TestSRPOrderingIgnoresFileParseOrder(t *testing.T) {
+	fset := token.NewFileSet()
+	var files []*ast.File
+	for _, source := range []struct{ name, text string }{
+		{"b.go", "package p\nfunc (s *Service) FromB(a, b, c string) {}\nfunc Second(a, b, c string) {}\n"},
+		{"a.go", "package p\ntype Service struct{ left, right int }\nfunc (s *Service) FromA(a, b, c string) {}\nfunc First(a, b, c string) {}\n"},
+	} {
+		file, err := parser.ParseFile(fset, source.name, source.text, parser.ParseComments)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, file)
+	}
+	info := typeCheckSource(t, fset, files)
+	profiles := buildSRPTypeProfiles(fset, files, info, nil, nil)
+	if len(profiles) != 1 || len(profiles[0].methods) != 2 ||
+		profiles[0].methods[0].Name.Name != "FromA" || profiles[0].methods[1].Name.Name != "FromB" {
+		t.Fatalf("profile methods are not in source order: %+v", profiles)
+	}
+
+	cfg := DefaultConfig()
+	cfg.MaxFuncParams = 2
+	var clumps []string
+	for _, issue := range CheckSRP(fset, files, cfg) {
+		if issue.Check == CheckSRPDataClump {
+			clumps = append(clumps, issue.Evidence)
+		}
+	}
+	if len(clumps) != 1 || !strings.HasPrefix(clumps[0], "data-clump:function=Second;peer=FromA;") {
+		t.Fatalf("data clump should pair the last and first functions in source order: %v", clumps)
+	}
+}
+
+func TestSRPFanOutTerminatesOnSelfReferentialFunctionTypes(t *testing.T) {
+	dir := t.TempDir()
+	source := `package p
+
+import "net/http"
+
+type stateFn func(*lexer) stateFn
+
+type handler func(http.ResponseWriter, *http.Request) handler
+
+type lexer struct {
+	state stateFn
+	next  handler
+}
+
+func (l *lexer) run(start stateFn) stateFn { return start(l) }
+`
+	if err := os.WriteFile(filepath.Join(dir, "lexer.go"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkgs := loadWorkspaceDir(t, dir, false, "types")
+	pkg := findPackageP(t, pkgs)
+	var lexer *srpTypeProfile
+	for _, profile := range buildSRPTypeProfiles(pkg.fset, pkg.files, pkg.info, pkg.typePkg, pkg) {
+		if profile.name == "lexer" {
+			lexer = profile
+		}
+	}
+	if lexer == nil {
+		t.Fatal("lexer profile missing")
+	}
+	got := strings.Join(SortedSymbols(keysFromBoolMap(lexer.metrics.fanout)), ",")
+	if got != "net/http/Request,net/http/ResponseWriter" {
+		t.Fatalf("fan-out = %s, want the foreign types reached through the recursive signature", got)
+	}
+	Run(pkgs, DefaultConfig(), allRulesEnabled())
+}
+
 func TestSRPStrictChecksSkipIncompleteTypeInformation(t *testing.T) {
 	dir := t.TempDir()
 	source := `package p
@@ -263,5 +337,19 @@ func TestSRPProfileTypeLinesSumsIndependentFileIntervals(t *testing.T) {
 	profile := &srpTypeProfile{pos: typeSpec.Pos(), end: typeSpec.End(), methods: []*ast.FuncDecl{method}}
 	if got := srpProfileTypeLines(profile, fset); got != 2 {
 		t.Fatalf("type LOC = %d, want 2 independent source lines", got)
+	}
+}
+
+func TestSRPCohesionCountsCallsToLaterMethods(t *testing.T) {
+	fset, files := parseSource(t, `package p
+
+type Service struct{ a, b int }
+
+func (s *Service) First()  { s.a++; s.Second() }
+func (s *Service) Second() { s.b++ }
+`)
+	profiles := buildSRPTypeProfiles(fset, files, typeCheckSource(t, fset, files), nil, nil)
+	if len(profiles) != 1 || len(profiles[0].metrics.lcom4) != 1 {
+		t.Fatalf("LCOM4 components = %v, want one component joined by the forward call", profiles[0].metrics.lcom4)
 	}
 }

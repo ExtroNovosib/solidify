@@ -121,5 +121,6 @@ func executeAnalysis(policy checkPolicy) (analysisResult, error) {
 	}
 	analyzer.ApplySeverity(issues, policy.fileConfig.Severities)
 	issues = filterIssues(issues, policy.fileConfig.Excludes)
+	warnings = append(warnings, stats.Warnings...)
 	return analysisResult{issues: issues, stats: stats, warnings: warnings}, nil
 }

@@ -3,11 +3,8 @@ package analyzer
 import (
 	"fmt"
 	"go/ast"
-	"go/build"
 	"go/token"
 	"go/types"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -118,9 +115,12 @@ func attachSRPMethodsToProfiles(profiles map[string]*srpTypeProfile, files []*as
 }
 
 func finalizeSRPTypeProfiles(profiles map[string]*srpTypeProfile, fset *token.FileSet, files []*ast.File, info *types.Info, pkg *types.Package) []*srpTypeProfile {
+	importMap := buildImportMap(files)
 	for _, profile := range profiles {
-		sort.Slice(profile.methods, func(i, j int) bool { return profile.methods[i].Pos() < profile.methods[j].Pos() })
-		analyzeSRPTypeProfile(profile, info, pkg, buildImportMap(files), pkgPath(pkg))
+		sort.Slice(profile.methods, func(i, j int) bool {
+			return sourceOrderLess(fset, profile.methods[i].Pos(), profile.methods[j].Pos())
+		})
+		analyzeSRPTypeProfile(profile, info, pkg, importMap, pkgPath(pkg))
 		profile.lines = srpProfileTypeLines(profile, fset)
 	}
 	out := make([]*srpTypeProfile, 0, len(profiles))
@@ -198,9 +198,13 @@ func analyzeSRPTypeProfile(profile *srpTypeProfile, info *types.Info, pkg *types
 	for _, field := range profile.fields {
 		fieldSet[field] = true
 	}
+	// Index every method first: a call to a method declared later in the
+	// source is still a cohesion edge.
 	methodIndex := map[string]int{}
 	for i, method := range profile.methods {
 		methodIndex[method.Name.Name] = i
+	}
+	for _, method := range profile.methods {
 		scoreSRPMethod(profile, method, info, pkg)
 		if method.Body == nil {
 			continue
@@ -560,57 +564,68 @@ func collectSRPProfileSignatureDependencies(profile *srpTypeProfile, fn *ast.Fun
 	collect(fn.Type.Results)
 }
 
+// collectExternalNamedTypes records foreign named types reachable through t.
+// Named types are visited once per call: a self-referential declaration such
+// as `type stateFn func(*lexer) stateFn` otherwise recurses without bound.
 func collectExternalNamedTypes(t types.Type, pkg *types.Package, out map[string]bool) {
+	walkExternalNamedTypes(t, pkg, out, map[*types.Named]bool{})
+}
+
+func walkExternalNamedTypes(t types.Type, pkg *types.Package, out map[string]bool, seen map[*types.Named]bool) {
 	if t == nil {
 		return
 	}
-	collectNamedOrSignature(t, pkg, out)
-	collectCompositeNamedTypes(t, pkg, out)
+	collectNamedOrSignature(t, pkg, out, seen)
+	collectCompositeNamedTypes(t, pkg, out, seen)
 }
 
-func collectNamedOrSignature(t types.Type, pkg *types.Package, out map[string]bool) {
+func collectNamedOrSignature(t types.Type, pkg *types.Package, out map[string]bool, seen map[*types.Named]bool) {
 	switch x := t.(type) {
 	case *types.Named:
+		if seen[x] {
+			return
+		}
+		seen[x] = true
 		obj := x.Obj()
 		if obj != nil && obj.Pkg() != nil && obj.Pkg() != pkg {
 			out[obj.Pkg().Path()+"/"+obj.Name()] = true
 		}
-		collectExternalNamedTypes(x.Underlying(), pkg, out)
+		walkExternalNamedTypes(x.Underlying(), pkg, out, seen)
 	case *types.Signature:
-		collectTupleTypes(x.Params(), pkg, out)
-		collectTupleTypes(x.Results(), pkg, out)
+		collectTupleTypes(x.Params(), pkg, out, seen)
+		collectTupleTypes(x.Results(), pkg, out, seen)
 	}
 }
 
-func collectCompositeNamedTypes(t types.Type, pkg *types.Package, out map[string]bool) {
+func collectCompositeNamedTypes(t types.Type, pkg *types.Package, out map[string]bool, seen map[*types.Named]bool) {
 	if p, ok := t.(*types.Pointer); ok {
-		collectExternalNamedTypes(p.Elem(), pkg, out)
+		walkExternalNamedTypes(p.Elem(), pkg, out, seen)
 		return
 	}
 	if s, ok := t.(*types.Slice); ok {
-		collectExternalNamedTypes(s.Elem(), pkg, out)
+		walkExternalNamedTypes(s.Elem(), pkg, out, seen)
 		return
 	}
 	if a, ok := t.(*types.Array); ok {
-		collectExternalNamedTypes(a.Elem(), pkg, out)
+		walkExternalNamedTypes(a.Elem(), pkg, out, seen)
 		return
 	}
 	if m, ok := t.(*types.Map); ok {
-		collectExternalNamedTypes(m.Key(), pkg, out)
-		collectExternalNamedTypes(m.Elem(), pkg, out)
+		walkExternalNamedTypes(m.Key(), pkg, out, seen)
+		walkExternalNamedTypes(m.Elem(), pkg, out, seen)
 		return
 	}
 	if c, ok := t.(*types.Chan); ok {
-		collectExternalNamedTypes(c.Elem(), pkg, out)
+		walkExternalNamedTypes(c.Elem(), pkg, out, seen)
 	}
 }
 
-func collectTupleTypes(tuple *types.Tuple, pkg *types.Package, out map[string]bool) {
+func collectTupleTypes(tuple *types.Tuple, pkg *types.Package, out map[string]bool, seen map[*types.Named]bool) {
 	if tuple == nil {
 		return
 	}
 	for i := 0; i < tuple.Len(); i++ {
-		collectExternalNamedTypes(tuple.At(i).Type(), pkg, out)
+		walkExternalNamedTypes(tuple.At(i).Type(), pkg, out, seen)
 	}
 }
 
@@ -778,11 +793,6 @@ func recordExternalImportPath(path, localPkgPath string, out map[string]bool) {
 		return
 	}
 	out[path] = true
-}
-
-func isStdlibImportPath(path string) bool {
-	info, err := os.Stat(filepath.Join(build.Default.GOROOT, "src", path))
-	return err == nil && info.IsDir()
 }
 
 func recordExternalPackage(objPkg, currentPkg *types.Package, out map[string]bool) {
