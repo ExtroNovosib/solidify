@@ -32,6 +32,7 @@ type packageFiles struct {
 	pkgPath          string
 	pkgName          string
 	modulePath       string
+	moduleGoMod      string // go.mod of the containing module; empty outside module mode
 	imports          []string
 	typeImports      map[string]*types.Package
 	dependencyFacts  string
@@ -52,28 +53,6 @@ func (pkg *packageFiles) packageCheckFiles() []*ast.File {
 		return pkg.passFiles
 	}
 	return pkg.files
-}
-
-// Load walks root recursively, parses every non-test, non-vendor .go file,
-// and groups them by directory (== package, for our purposes).
-//
-// Deprecated: use LoadWorkspace.
-func Load(root string, includeTests bool) ([]*packageFiles, error) {
-	pkgs, _, err := LoadWorkspace([]string{root}, includeTests, syntaxAnalysisMode)
-	return pkgs, err
-}
-
-// LoadWithTypes optionally enriches parsed packages with standard-library
-// go/types information. A type-check failure leaves syntax analysis usable.
-//
-// Deprecated: use LoadWorkspace.
-func LoadWithTypes(root string, includeTests, withTypes bool) ([]*packageFiles, error) {
-	mode := syntaxAnalysisMode
-	if withTypes {
-		mode = "auto"
-	}
-	pkgs, _, err := LoadWorkspace([]string{root}, includeTests, mode)
-	return pkgs, err
 }
 
 func parsePackageFiles(dir string, paths []string, withTypes bool) (*packageFiles, error) {
@@ -272,7 +251,7 @@ func initRunCache(pkgs []*packageFiles, cfg Config, plan ExecutionPlan) *package
 	if !cfg.CacheEnabled {
 		return nil
 	}
-	return newPackageCache(cacheRootDir(pkgs, cfg), cfg, plan)
+	return newPackageCache(cacheRootDir(pkgs, cfg), cfg, plan, workspacePackagePaths(pkgs))
 }
 
 type packageJob struct {
@@ -423,11 +402,14 @@ func sortIssues(all []Issue) {
 	})
 }
 
-// applySuppressions accepts `//solidify:ignore RULE-ID justification` on the
-// same line, immediately preceding a finding, or anywhere in the declaration
-// header that owns the finding. Declaration-header matching lets one justified
-// directive cover every parameter in a multi-line function signature without
-// suppressing findings from the function body.
+// applySuppressions accepts `//solidlint:ignore ID justification` (or the
+// original `//solidify:ignore` spelling) on the same line, immediately
+// preceding a finding, or anywhere in the declaration header that owns the
+// finding. Declaration-header matching lets one justified directive cover every
+// parameter in a multi-line function signature without suppressing findings
+// from the function body. `//solidlint:ignore-file ID justification` anywhere
+// in a file covers every matching finding whose primary position is in that
+// file. ID is a concrete check ID or a rule family such as SOLID-I.
 func applySuppressions(issues []Issue, pkgs []*packageFiles) []Issue {
 	byFile, spansByFile := collectSuppressionMetadata(pkgs)
 	out := issues[:0]
@@ -440,8 +422,32 @@ func applySuppressions(issues []Issue, pkgs []*packageFiles) []Issue {
 }
 
 type suppressionDirective struct {
-	rule string
-	line int
+	rule      string
+	line      int
+	fileLevel bool
+}
+
+// Accepted directive verbs. The solidlint namespace matches the tool name; the
+// solidify namespace predates it and remains fully supported.
+var suppressionVerbs = map[string]bool{
+	"solidify:ignore": false, "solidify:ignore-file": true,
+	"solidlint:ignore": false, "solidlint:ignore-file": true,
+}
+
+// parseSuppressionComment classifies one comment. candidate reports whether the
+// comment uses a suppression namespace at all; ok additionally requires a known
+// verb, a known check or rule ID, and a non-empty justification.
+func parseSuppressionComment(text string) (directive suppressionDirective, candidate, ok bool) {
+	text = strings.TrimSpace(strings.TrimPrefix(text, "//"))
+	if !strings.HasPrefix(text, "solidify:ignore") && !strings.HasPrefix(text, "solidlint:ignore") {
+		return suppressionDirective{}, false, false
+	}
+	parts := strings.Fields(text)
+	fileLevel, knownVerb := suppressionVerbs[parts[0]]
+	if !knownVerb || len(parts) < 3 || !IsKnownCheckID(parts[1]) {
+		return suppressionDirective{}, true, false
+	}
+	return suppressionDirective{rule: parts[1], fileLevel: fileLevel}, true, true
 }
 
 type declarationSpan struct {
@@ -515,16 +521,13 @@ func suppressionDirectives(fset *token.FileSet, file *ast.File) map[string][]sup
 	byFile := map[string][]suppressionDirective{}
 	for _, group := range file.Comments {
 		for _, comment := range group.List {
-			text := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
-			parts := strings.Fields(text)
-			if len(parts) < 3 || parts[0] != "solidify:ignore" {
+			directive, _, ok := parseSuppressionComment(comment.Text)
+			if !ok {
 				continue
 			}
 			position := fset.Position(comment.Pos())
-			byFile[position.Filename] = append(byFile[position.Filename], suppressionDirective{
-				rule: parts[1],
-				line: position.Line,
-			})
+			directive.line = position.Line
+			byFile[position.Filename] = append(byFile[position.Filename], directive)
 		}
 	}
 	return byFile
@@ -535,6 +538,11 @@ func issueSuppressed(
 	byFile map[string][]suppressionDirective,
 	spansByFile map[string][]declarationSpan,
 ) bool {
+	for _, directive := range byFile[issue.Pos.Filename] {
+		if directive.fileLevel && directiveMatchesIssue(directive, issue) {
+			return true
+		}
+	}
 	if locationHasSuppression(issue, issue.Pos, byFile, spansByFile) {
 		return true
 	}
@@ -553,7 +561,9 @@ func locationHasSuppression(
 	spansByFile map[string][]declarationSpan,
 ) bool {
 	for _, directive := range byFile[position.Filename] {
-		if directiveMatchesIssue(directive, issue) &&
+		// File-level directives match only through the primary position, which
+		// issueSuppressed handles before consulting line-scoped locations.
+		if !directive.fileLevel && directiveMatchesIssue(directive, issue) &&
 			matchesSuppressionLocation(directive.line, position.Line, spansByFile[position.Filename]) {
 			return true
 		}
@@ -562,7 +572,7 @@ func locationHasSuppression(
 }
 
 func directiveMatchesIssue(directive suppressionDirective, issue Issue) bool {
-	return directive.rule == issue.ID()
+	return directive.rule == issue.ID() || directive.rule == string(issue.Rule)
 }
 
 func matchesSuppressionLocation(directiveLine, findingLine int, spans []declarationSpan) bool {
@@ -583,20 +593,16 @@ func suppressionMatchesLine(directiveLine, findingLine int) bool {
 	return directiveLine == findingLine || directiveLine+1 == findingLine
 }
 
-// ValidateSuppressions rejects broad or unexplained suppression directives
-// before analysis output is produced.
+// ValidateSuppressions rejects unknown, unscoped, or unexplained suppression
+// directives before analysis output is produced.
 func ValidateSuppressions(pkgs []*packageFiles) error {
 	for _, pkg := range pkgs {
 		for _, f := range pkg.files {
 			for _, group := range f.Comments {
 				for _, c := range group.List {
-					text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
-					if !strings.HasPrefix(text, "solidify:ignore") {
-						continue
-					}
-					parts := strings.Fields(text)
-					if len(parts) < 3 || parts[0] != "solidify:ignore" || !IsKnownCheckID(parts[1]) {
-						return fmt.Errorf("%s:%d: suppression must name a specific rule ID and non-empty justification", pkg.fset.Position(c.Pos()).Filename, pkg.fset.Position(c.Pos()).Line)
+					if _, candidate, ok := parseSuppressionComment(c.Text); candidate && !ok {
+						position := pkg.fset.Position(c.Pos())
+						return fmt.Errorf("%s:%d: suppression must be //solidlint:ignore <ID> <reason> or //solidlint:ignore-file <ID> <reason> (solidify: prefix also accepted), where <ID> is a known check ID or rule family", position.Filename, position.Line)
 					}
 				}
 			}

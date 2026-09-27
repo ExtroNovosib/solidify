@@ -21,28 +21,19 @@ type checkPolicy struct {
 func resolveCheckPolicy(options checkOptions, build BuildInfo) (checkPolicy, error) {
 	cfg := analyzer.DefaultConfig()
 	cfg.Profile = analyzer.ProfileStable
-	configFile := options.configPath
-	discovered := false
-	var err error
-	if configFile == "" {
-		configFile, err = configpkg.FindForTargets(options.paths)
-		if err != nil {
-			return checkPolicy{}, err
-		}
-		discovered = configFile != ""
+	configFile, discovered, fileConfig, err := loadCheckConfig(options)
+	if err != nil {
+		return checkPolicy{}, err
 	}
-	var fileConfig analyzer.FileConfig
 	if configFile != "" {
-		fileConfig, err = configpkg.Load(configFile)
-		if err != nil {
-			return checkPolicy{}, err
-		}
 		fileConfig.Apply(&cfg)
-		if discovered {
-			fmt.Fprintln(os.Stderr, "solidlint: using config", configFile, "(discovered from scan target)")
-		}
 	}
 	applyCheckOverrides(&cfg, &options, fileConfig)
+	if len(options.thresholds) > 0 {
+		if thresholdErr := configpkg.ApplyThresholds(&cfg, options.thresholds); thresholdErr != nil {
+			return checkPolicy{}, fmt.Errorf("-threshold: %w", thresholdErr)
+		}
+	}
 	cfg.CacheDir = options.cacheDir
 	cfg.CacheEnabled = options.cache
 	cfg.CacheDiagnostics = options.cacheDebug
@@ -65,7 +56,31 @@ func resolveCheckPolicy(options checkOptions, build BuildInfo) (checkPolicy, err
 	if err != nil {
 		return checkPolicy{}, err
 	}
+	if discovered && !options.quiet {
+		fmt.Fprintf(os.Stderr, "solidlint: using config %s (discovered from scan target); profile=%s checks=%d\n", configFile, plan.Profile(), len(plan.SelectedCheckIDs()))
+	}
 	return checkPolicy{options: options, config: cfg, fileConfig: fileConfig, enabled: enabled, plan: plan, configFile: configFile}, nil
+}
+
+// loadCheckConfig loads the explicit -config file or the one discovered from
+// the scan targets; discovered reports the latter.
+func loadCheckConfig(options checkOptions) (string, bool, analyzer.FileConfig, error) {
+	configFile, discovered := options.configPath, false
+	if configFile == "" {
+		found, err := configpkg.FindForTargets(options.paths)
+		if err != nil {
+			return "", false, analyzer.FileConfig{}, err
+		}
+		configFile, discovered = found, found != ""
+	}
+	if configFile == "" {
+		return "", false, analyzer.FileConfig{}, nil
+	}
+	fileConfig, err := configpkg.Load(configFile)
+	if err != nil {
+		return "", false, analyzer.FileConfig{}, err
+	}
+	return configFile, discovered, fileConfig, nil
 }
 
 func applyCheckOverrides(cfg *analyzer.Config, options *checkOptions, fileConfig analyzer.FileConfig) {

@@ -35,4 +35,6 @@ Evidence records the dispatch source, correlated sites, shared variants, full va
 
 ## Limitations and remediation
 
+Dispatch over standard-library AST, encoding, and reflection types (sources under `go/`, `encoding/`, and `reflect.`) is allowed by default, and `ocp.allow_dispatch_types` adds project-specific sources. Both allowlists apply identically in typed and syntax analysis: a syntax-only or ill-typed package that switches over an explicitly declared `ast.Node` parameter is resolved through its import path and stays quiet, exactly as it does with complete types. Syntax mode cannot resolve sources declared through inferred local variables, so those remain correlated only by lexical binding.
+
 Closed protocol decoders, exhaustive boundary adapters, and compatibility shims may deliberately enumerate variants. Prefer behavior on an interface only when variants own the behavior and extension is expected. No generic suppression is advertised as a safe fix; use reviewed suppression or annotated baseline v5 debt when the closed set is intentional. See the [stable v0.2 evaluation](../../evaluations/stable-v0.2.md).

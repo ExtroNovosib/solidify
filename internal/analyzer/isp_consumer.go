@@ -370,7 +370,7 @@ func checkISPUnusedDependencies(
 			}
 			for _, spec := range gen.Specs {
 				typeSpec, ok := spec.(*ast.TypeSpec)
-				if !ok || !typeSpec.Name.IsExported() || isWiringAggregateName(typeSpec.Name.Name) {
+				if !ok || !typeSpec.Name.IsExported() || isWiringAggregateName(typeSpec.Name.Name, cfg) {
 					continue
 				}
 				structType, ok := typeSpec.Type.(*ast.StructType)
@@ -411,11 +411,8 @@ func checkISPUnusedDependencies(
 	return issues
 }
 
-func isWiringAggregateName(name string) bool {
-	return strings.HasSuffix(name, "Bundle") ||
-		strings.HasSuffix(name, "Deps") ||
-		strings.HasSuffix(name, "Dependencies") ||
-		strings.HasSuffix(name, "Stores")
+func isWiringAggregateName(name string, cfg Config) bool {
+	return hasAnySuffix(name, cfg.ISPWiringAggregateSuffixes)
 }
 
 func eligibleOwnedInterface(t types.Type, info *types.Info, pkg *packageFiles) bool {

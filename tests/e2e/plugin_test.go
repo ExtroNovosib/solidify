@@ -11,6 +11,9 @@ import (
 )
 
 func TestCustomGolangCIModulePluginHonorsSelectedChecks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires network access to build golangci-lint")
+	}
 	root := repositoryRoot(t)
 	work := t.TempDir()
 	binDir := filepath.Join(work, "bin")

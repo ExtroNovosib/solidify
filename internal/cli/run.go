@@ -95,15 +95,6 @@ func filterIssues(in []analyzer.Issue, excludes []string) []analyzer.Issue {
 	return out
 }
 
-func writeBaseline(path string, issues []analyzer.Issue, reason ...string) error {
-	return baselinepkg.Write(path, issues, reason...)
-}
-
-func readBaselineInfo(path string) (map[string]bool, int, error) {
-	accepted, err := baselinepkg.Read(path)
-	return accepted, baselinepkg.Version, err
-}
-
 func filterBaseline(in []analyzer.Issue, accepted map[string]bool) []analyzer.Issue {
 	return baselinepkg.Filter(in, accepted)
 }

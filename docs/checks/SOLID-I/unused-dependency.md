@@ -13,8 +13,10 @@ for incomplete packages in auto mode.
 
 Surfaces: standalone CLI and both GolangCI plugin modes.
 
-The check is limited to configured logic packages and skips composition roots,
-named service bundles, dependency bags, and `*Stores` wiring aggregates. It
+The check is limited to configured logic packages and skips composition roots
+and wiring aggregates: exported types whose names end in `Bundle`, `Deps`,
+`Dependencies`, or `Stores`. `isp.wiring_aggregate_suffixes` replaces that
+suffix list when set. It
 follows only direct struct-field transfers. Any call, return, local variable,
 or unresolved flow is treated conservatively as consumed instead of becoming a
 finding.

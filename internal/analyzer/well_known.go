@@ -15,8 +15,18 @@ const (
 	localStructKind   = "struct"
 )
 
-func isConfigDataBagType(typeName string) bool {
-	return strings.HasSuffix(typeName, "Config")
+func isConfigDataBagType(typeName string, cfg Config) bool {
+	return hasAnySuffix(typeName, cfg.DIPDataBagSuffixes)
+}
+
+// hasAnySuffix reports whether name ends with one of the configured suffixes.
+func hasAnySuffix(name string, suffixes []string) bool {
+	for _, suffix := range suffixes {
+		if suffix != "" && strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func isSamePackageLocalStruct(kind map[string]string, dep string) bool {

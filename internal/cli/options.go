@@ -4,9 +4,19 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/ExtroNovosib/solidify/internal/analyzer"
 )
+
+// legacyThresholdFlags are the dedicated threshold flags; each sets the
+// registry threshold of the same name with underscores.
+var legacyThresholdFlags = []string{
+	"max-methods", "max-func-lines", "max-params", "max-switch-cases",
+	"max-interface-methods", "isp-min-methods", "isp-usage-ratio-percent",
+}
 
 type checkOptions struct {
 	rules, profile, enabledChecks                  string
@@ -19,7 +29,8 @@ type checkOptions struct {
 	configPath, baselinePath, writeBaselinePath    string
 	baselineReason, baselineOwner, baselineExpires string
 	baselineStale, baselineExpired, cacheDir       string
-	cacheDebug, printConfig, baselinePrune         bool
+	cacheDebug, printConfig, baselinePrune, quiet  bool
+	thresholds                                     map[string]int
 	paths                                          []string
 	set                                            map[string]bool
 }
@@ -27,7 +38,7 @@ type checkOptions struct {
 func parseCheckOptions(args []string) (checkOptions, error) {
 	defaults := analyzer.DefaultConfig()
 	fs := flag.NewFlagSet("solidlint", flag.ContinueOnError)
-	var options checkOptions
+	options := checkOptions{thresholds: map[string]int{}}
 	fs.StringVar(&options.rules, "rules", "S,O,L,I,D", "comma-separated list of rules to run (S,O,L,I,D)")
 	fs.StringVar(&options.profile, "profile", string(analyzer.ProfileStable), "check profile: stable|all|calibration")
 	fs.StringVar(&options.enabledChecks, "enable-checks", "", "comma-separated concrete check IDs to enable")
@@ -44,7 +55,7 @@ func parseCheckOptions(args []string) (checkOptions, error) {
 	fs.IntVar(&options.maxInterfaceMethods, "max-interface-methods", defaults.MaxInterfaceMethods, "ISP: max methods per interface")
 	fs.IntVar(&options.ispMinMethods, "isp-min-methods", defaults.ISPMinMethods, "ISP: minimum interface methods for usage-ratio and stub checks")
 	fs.IntVar(&options.ispUsageRatioPercent, "isp-usage-ratio-percent", defaults.ISPUsageRatioPercent, "ISP: minimum used-method percentage")
-	fs.StringVar(&options.configPath, "config", "", "path to .solidify.yml (default: discover)")
+	fs.StringVar(&options.configPath, "config", "", "path to the configuration file (default: discover .solidlint.yml or .solidify.yml upwards from each target)")
 	fs.StringVar(&options.baselinePath, "baseline", "", "JSON baseline of accepted finding fingerprints")
 	fs.StringVar(&options.writeBaselinePath, "write-baseline", "", "write current findings as a baseline JSON file")
 	fs.StringVar(&options.baselineReason, "baseline-reason", "", "review reason required for newly accepted findings")
@@ -57,6 +68,8 @@ func parseCheckOptions(args []string) (checkOptions, error) {
 	fs.BoolVar(&options.cache, "cache", true, "enable the analysis cache")
 	fs.BoolVar(&options.cacheDebug, "cache-debug", false, "print cache diagnostics to stderr")
 	fs.BoolVar(&options.printConfig, "print-config", false, "print effective configuration and exit")
+	fs.BoolVar(&options.quiet, "quiet", false, "suppress informational notices such as the discovered-config line; warnings and errors still print")
+	fs.Func("threshold", "set any configuration threshold as key=value, for example max_interface_methods=6 (repeatable)", options.addThreshold)
 	fs.Usage = func() {
 		_, _ = fmt.Fprintln(fs.Output(), "solidlint checks Go source for heuristic SOLID principle violations.")
 		_, _ = fmt.Fprintln(fs.Output(), "\nUsage: solidlint [check] [flags] <path> [<path> ...]")
@@ -79,6 +92,37 @@ func parseCheckOptions(args []string) (checkOptions, error) {
 	return options, nil
 }
 
+func (options checkOptions) addThreshold(value string) error {
+	key, raw, found := strings.Cut(value, "=")
+	key = strings.TrimSpace(key)
+	if !found || key == "" {
+		return fmt.Errorf("expected key=value")
+	}
+	number, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("threshold %q needs an integer value, got %q", key, raw)
+	}
+	options.thresholds[key] = number
+	return nil
+}
+
+// thresholdFlagConflict reports a legacy threshold flag and a -threshold
+// entry that set the same key, which would make precedence ambiguous.
+func (options checkOptions) thresholdFlagConflict() error {
+	var conflicts []string
+	for _, name := range legacyThresholdFlags {
+		key := strings.ReplaceAll(name, "-", "_")
+		if _, dup := options.thresholds[key]; dup && options.set[name] {
+			conflicts = append(conflicts, fmt.Sprintf("-%s and -threshold %s", name, key))
+		}
+	}
+	if len(conflicts) == 0 {
+		return nil
+	}
+	sort.Strings(conflicts)
+	return fmt.Errorf("conflicting threshold flags: %s; set each threshold once", strings.Join(conflicts, ", "))
+}
+
 func (options checkOptions) validate() error {
 	if options.format != "text" && options.format != "json" && options.format != "sarif" {
 		return fmt.Errorf("unknown format %q (expected text, json, or sarif)", options.format)
@@ -98,5 +142,5 @@ func (options checkOptions) validate() error {
 	if options.baselineExpired != "warn" && options.baselineExpired != "error" {
 		return fmt.Errorf("unknown baseline expired policy %q (expected warn or error)", options.baselineExpired)
 	}
-	return nil
+	return options.thresholdFlagConflict()
 }

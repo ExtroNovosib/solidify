@@ -110,6 +110,19 @@ if git ls-remote --exit-code --tags "$remote" "refs/tags/$version" >/dev/null 2>
 	die "remote tag $version already exists; choose a new version"
 fi
 
+rollover="$script_dir/rollover-changelog.sh"
+[ -x "$rollover" ] || die "missing executable $rollover"
+changelog_check=$(mktemp "${TMPDIR:-/tmp}/solidlint-changelog-check.XXXXXX")
+cp CHANGELOG.md "$changelog_check" 2>/dev/null || {
+	rm -f "$changelog_check"
+	die "CHANGELOG.md is required"
+}
+if ! "$rollover" "$version" "$changelog_check"; then
+	rm -f "$changelog_check"
+	die "add release notes under '## Unreleased' in CHANGELOG.md before publishing $version"
+fi
+rm -f "$changelog_check"
+
 echo "Release candidate: $version"
 echo "Destination:       $remote/$branch"
 echo "Current changes:"
@@ -117,6 +130,7 @@ git status --short
 
 if [ "$dry_run" = true ]; then
 	echo "Would update release-version examples in README.md to $version"
+	echo "Would move CHANGELOG.md Unreleased entries under $version"
 	if [ "$skip_checks" = false ]; then
 		echo "Would run: make check"
 		echo "Would bootstrap pinned GoReleaser v2.17.1 when no executable is configured"
@@ -151,6 +165,8 @@ grep -Fq "github.com/ExtroNovosib/solidify/cmd/solidlint@$version" README.md ||
 	die "could not update README installation examples to $version"
 grep -Fq "version: $version" README.md ||
 	die "could not update README plugin examples to $version"
+
+"$rollover" "$version" CHANGELOG.md
 
 echo "Release change set:"
 git status --short

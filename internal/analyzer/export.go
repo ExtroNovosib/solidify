@@ -85,46 +85,6 @@ func (p *PackageSnapshot) RunGroup(group ExecutionGroup, cfg Config) []Issue {
 	return issues
 }
 
-// RunISP executes package-scoped ISP checks on the snapshot.
-func (p *PackageSnapshot) RunISP(cfg Config) []Issue {
-	if p == nil || p.pkg == nil {
-		return nil
-	}
-	issues := CheckISPWithTypes(p.pkg.fset, p.pkg.files, p.pkg.info, cfg, p.pkg)
-	_ = FinalizeIssues(issues, p.pkg.pkgPath)
-	return issues
-}
-
-// RunSRP executes all nine package-scoped SRP checks on the snapshot.
-func (p *PackageSnapshot) RunSRP(cfg Config) []Issue {
-	if p == nil || p.pkg == nil {
-		return nil
-	}
-	issues := runSRPCheck(p.pkg, cfg)
-	_ = FinalizeIssues(issues, p.pkg.pkgPath)
-	return issues
-}
-
-// RunLSP executes the package-scoped non-exact-EOF check on the snapshot.
-func (p *PackageSnapshot) RunLSP(cfg Config) []Issue {
-	if p == nil || p.pkg == nil {
-		return nil
-	}
-	issues := runLSPPackageCheck(p.pkg, cfg)
-	_ = FinalizeIssues(issues, p.pkg.pkgPath)
-	return issues
-}
-
-// RunDIP executes package-scoped DIP checks on the snapshot.
-func (p *PackageSnapshot) RunDIP(cfg Config) []Issue {
-	if p == nil || p.pkg == nil {
-		return nil
-	}
-	issues := CheckDIPWithTypes(p.pkg.fset, p.pkg.files, p.pkg.info, cfg, p.pkg)
-	_ = FinalizeIssues(issues, p.pkg.pkgPath)
-	return issues
-}
-
 // SnapshotFromPackages converts a go/packages entry into a snapshot.
 func SnapshotFromPackages(pkg *packages.Package) *PackageSnapshot {
 	if pkg == nil || len(pkg.Syntax) == 0 {

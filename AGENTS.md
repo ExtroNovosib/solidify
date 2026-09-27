@@ -19,7 +19,7 @@
 ## Validation
 
 - During development, run the narrowest relevant `go test` command first.
-- Run `go test ./...` for general Go changes.
+- Run `go test ./...` for general Go changes. Use `go test -short ./...` for an offline loop; `-short` skips E2E tests that download golangci-lint.
 - Run `make precision` when analyzer detection behavior changes.
 - Run `make sarif-check schema-check` when JSON or SARIF output changes.
 - Run `make check` before pushing or handing off substantial changes when the required local tools are available. Report any skipped or failing checks.
@@ -29,4 +29,4 @@
 - Flag changes that can make clean fixtures produce findings or expected violation fixtures lose findings.
 - Flag diagnostics that lose portable repository-relative paths, stable fingerprints, or valid JSON/SARIF schema output.
 - Flag analyzer changes that unintentionally diverge between syntax-only, types-required, and auto fallback modes.
-- Flag suppressions, exclusions, baselines, or cache behavior that can silently hide new findings outside their documented scope.
+- Flag suppressions, exclusions, baselines, or cache behavior that can silently hide new findings outside their documented scope. Suppression directives (`//solidlint:ignore`, `//solidlint:ignore-file`, and the `solidify:` spellings) must name a known check ID or rule family and a reason; family and file-level directives are intentionally broader, so review them like baseline entries.

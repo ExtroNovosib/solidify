@@ -10,6 +10,7 @@ Example: scan the package directory and review the reported evidence before supp
 - Analysis modes: equivalent in syntax, auto, and types modes.
 - Surfaces: standalone CLI only because the check performs program correlation.
 - Evidence names the matched source construct; metrics record measured values, configured thresholds, and comparators. Fingerprints use the check ID, portable path, subject, and identity, never the message or measured counts.
+- A logic package may not import a configured `architecture.implementation_packages` pattern or a built-in detail import. The built-in list defaults to `database/sql`, `database/sql/driver`, `net/http`, and `os/exec`; `dip.detail_imports` replaces it with exact import paths when set.
 
 ## Examples
 

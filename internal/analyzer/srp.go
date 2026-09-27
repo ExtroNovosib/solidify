@@ -9,33 +9,31 @@ import (
 )
 
 // CheckSRP runs syntax-only SRP checks. Type-dependent strict checks are
-// intentionally unavailable through this compatibility entry point.
+// intentionally unavailable through this compatibility entry point;
+// SOLID-S/large-type uses the same multi-signal profile rule as package runs.
 func CheckSRP(fset *token.FileSet, files []*ast.File, cfg Config) []Issue {
 	// Preserve the historical direct API's line-only behavior. Package runs
 	// use CheckSRPWithTypes and apply the stricter LOC+complexity signal.
 	cfg.MaxFuncComplexity = 0
-	return checkSRPSyntax(fset, files, cfg, nil)
+	return checkSRPWithTypes(SRPCheckInput{Fset: fset, Files: files, Config: cfg})
 }
 
-// checkSRPSyntax flags several explainable symptoms of a type/function doing too
-// much:
+// checkSRPSyntax flags several explainable function-level symptoms of code
+// doing too much:
 //
-//  1. A type (struct) that accumulates more methods than MaxMethodsPerType.
-//     A large method set is the most common real-world signal of a
-//     "god object" that mixes several responsibilities.
-//  2. A function/method body longer than MaxFuncLines lines.
-//  3. A long parameter list that spans several distinct types, or repeats as
+//  1. A function/method body longer than MaxFuncLines lines.
+//  2. A long parameter list that spans several distinct types, or repeats as
 //     a data clump in another function. Raw parameter count alone is
 //     deliberately not a finding: homogeneous mathematical and batch APIs
 //     can have many inputs while remaining cohesive.
-//  4. A boolean parameter used to choose between two behaviors. Such flag
+//  3. A boolean parameter used to choose between two behaviors. Such flag
 //     arguments expose two reasons for the function to change and are better
 //     represented by intention-revealing entry points or an options type.
+//
+// Type-level size findings come from the shared profile rule in
+// checkSRPWithTypes, with or without type information.
 func checkSRPSyntax(fset *token.FileSet, files []*ast.File, cfg Config, pkg *packageFiles) []Issue {
 	var issues []Issue
-	methodCount := map[string]int{}         // receiver type name -> number of methods
-	methodExample := map[string]token.Pos{} // first method position, for reporting
-	methodExampleEnd := map[string]token.Pos{}
 	var parameterProfiles []*functionParameterProfile
 	parameterChecks := checkEnabled(cfg, CheckSRPFlagArgument) || checkEnabled(cfg, CheckSRPMixedInputSurface) || checkEnabled(cfg, CheckSRPDataClump)
 
@@ -60,23 +58,10 @@ func checkSRPSyntax(fset *token.FileSet, files []*ast.File, cfg Config, pkg *pac
 					issues = append(issues, issue)
 				}
 			}
-			if checkEnabled(cfg, CheckSRPLargeType) && fn.Recv != nil && len(fn.Recv.List) > 0 {
-				typeName := receiverTypeName(fn.Recv.List[0].Type)
-				if typeName != "" {
-					methodCount[typeName]++
-					if _, seen := methodExample[typeName]; !seen {
-						methodExample[typeName] = fn.Pos()
-						methodExampleEnd[typeName] = fn.End()
-					}
-				}
-			}
 		}
 	}
 	if checkEnabled(cfg, CheckSRPDataClump) {
 		issues = append(issues, parameterDataClumpIssues(fset, parameterProfiles, cfg)...)
-	}
-	if checkEnabled(cfg, CheckSRPLargeType) {
-		issues = append(issues, largeMethodSetIssues(fset, methodCount, methodExample, methodExampleEnd, cfg)...)
 	}
 	return issues
 }
@@ -264,25 +249,6 @@ func parameterSetContains(super, subset []functionParameter) bool {
 		}
 	}
 	return true
-}
-
-func largeMethodSetIssues(fset *token.FileSet, methodCount map[string]int, methodExample map[string]token.Pos, methodExampleEnd map[string]token.Pos, cfg Config) []Issue {
-	var issues []Issue
-	for typeName, count := range methodCount {
-		if count > cfg.MaxMethodsPerType {
-			issues = append(issues, issueSpan(fset, methodExample[typeName], methodExampleEnd[typeName], Issue{
-				Rule:     RuleSRP,
-				Check:    CheckSRPLargeType,
-				Severity: SeverityNote,
-				Evidence: fmt.Sprintf("large-type:type=%s;methods=%d", typeName, count),
-				Message: fmt.Sprintf(
-					"type %q has %d methods (max %d): it likely has more than one responsibility; consider splitting it into smaller collaborating types",
-					typeName, count, cfg.MaxMethodsPerType,
-				),
-			}))
-		}
-	}
-	return issues
 }
 
 type functionParameter struct {

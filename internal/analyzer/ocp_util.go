@@ -335,6 +335,10 @@ func isInterface(typ types.Type) bool {
 }
 
 func dispatchTypeAllowed(key string, cfg Config) bool {
+	// Syntax-mode keys carry a provenance prefix in front of the same
+	// import-path-qualified name typed analysis produces; both modes share one
+	// allowlist. Binding and dynamic-source keys never name a type.
+	key = strings.TrimPrefix(key, "syntax-type:")
 	// AST/type-model visitors are intentionally closed over the standard
 	// library's node set. Treat those external visitor patterns as an explicit
 	// safe default; project-specific visitors remain configurable below.

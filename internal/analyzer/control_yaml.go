@@ -21,9 +21,19 @@ type yamlFileConfig struct {
 	AllowDependencies []string          `yaml:"allow_dependencies"`
 	DisabledChecks    []string          `yaml:"disabled_checks"`
 	FailLevel         string            `yaml:"fail_level"`
+	SRP               yamlSRPSection    `yaml:"srp"`
 	OCP               yamlOCPSection    `yaml:"ocp"`
+	ISP               yamlISPSection    `yaml:"isp"`
 	Architecture      yamlArchSection   `yaml:"architecture"`
 	DIP               yamlDIPSection    `yaml:"dip"`
+}
+
+type yamlSRPSection struct {
+	OrchestratorSuffixes []string `yaml:"orchestrator_suffixes"`
+}
+
+type yamlISPSection struct {
+	WiringAggregateSuffixes []string `yaml:"wiring_aggregate_suffixes"`
 }
 
 type yamlOCPSection struct {
@@ -41,6 +51,9 @@ type yamlArchSection struct {
 type yamlDIPSection struct {
 	InfraErrorPackages []string `yaml:"infra_error_packages"`
 	TransportTypes     []string `yaml:"transport_types"`
+	DomainPackages     []string `yaml:"domain_packages"`
+	DataBagSuffixes    []string `yaml:"data_bag_suffixes"`
+	DetailImports      []string `yaml:"detail_imports"`
 }
 
 func LoadFileConfig(path string) (FileConfig, error) {
@@ -148,6 +161,12 @@ func (raw yamlFileConfig) toFileConfig() FileConfig {
 		OCPCompositionRoots:       append([]string(nil), raw.Architecture.CompositionRoots...),
 		DIPInfraErrorPackages:     append([]string(nil), raw.DIP.InfraErrorPackages...),
 		DIPTransportTypes:         append([]string(nil), raw.DIP.TransportTypes...),
+
+		SRPOrchestratorSuffixes:    append([]string(nil), raw.SRP.OrchestratorSuffixes...),
+		ISPWiringAggregateSuffixes: append([]string(nil), raw.ISP.WiringAggregateSuffixes...),
+		DIPDomainPackages:          append([]string(nil), raw.DIP.DomainPackages...),
+		DIPDataBagSuffixes:         append([]string(nil), raw.DIP.DataBagSuffixes...),
+		DIPDetailImports:           append([]string(nil), raw.DIP.DetailImports...),
 	}
 	for key, value := range raw.Thresholds {
 		cfg.Thresholds[key] = value
@@ -168,6 +187,8 @@ func yamlConfigError(path string, data []byte, err error) error {
 		"allow-packages": "allow_packages", "logic-packages": "logic_packages",
 		"implementation-packages": "implementation_packages", "composition-roots": "composition_roots",
 		"infra-error-packages": "infra_error_packages", "transport-types": "transport_types",
+		"orchestrator-suffixes": "orchestrator_suffixes", "wiring-aggregate-suffixes": "wiring_aggregate_suffixes",
+		"domain-packages": "domain_packages", "data-bag-suffixes": "data_bag_suffixes", "detail-imports": "detail_imports",
 	}
 	for old, canonical := range legacy {
 		if strings.Contains(message, "field "+old+" not found") {
@@ -175,9 +196,11 @@ func yamlConfigError(path string, data []byte, err error) error {
 			break
 		}
 	}
-	var node *yaml.Node
-	if unmarshalErr := yaml.Unmarshal(data, &node); unmarshalErr == nil && node != nil {
-		if line := yamlErrorLine(node, err); line > 0 {
+	// Decode into a Node value: a **Node target yields an empty node, which
+	// would drop the line prefix from every decode error.
+	var node yaml.Node
+	if unmarshalErr := yaml.Unmarshal(data, &node); unmarshalErr == nil {
+		if line := yamlErrorLine(&node, err); line > 0 {
 			return fmt.Errorf("%s:%d: %w", path, line, err)
 		}
 	}

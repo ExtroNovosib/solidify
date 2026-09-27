@@ -496,7 +496,7 @@ func srpProfileLowCohesionIssue(profile *srpTypeProfile, fset *token.FileSet, cf
 	if len(profile.methods) < cfg.MinCohesionMethods || len(profile.fields) < cfg.MinCohesionFields {
 		return nil
 	}
-	if strings.HasSuffix(profile.name, "Handler") {
+	if hasAnySuffix(profile.name, cfg.SRPOrchestratorSuffixes) {
 		return nil
 	}
 	if isSerializedDataCarrier(profile.serializedFields, len(profile.fields), profile.methods) {

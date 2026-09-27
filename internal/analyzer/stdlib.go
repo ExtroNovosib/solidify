@@ -1,35 +1,62 @@
 package analyzer
 
 import (
+	"encoding/json"
 	"go/build"
 	"go/types"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
 
-// stdlibSourceRoot is the GOROOT of the go command that loads packages.
-// build.Default.GOROOT is fixed when solidlint itself is compiled: prebuilt
-// binaries carry the release builder's toolchain path, and local installs go
-// stale after a Go upgrade. Either way every standard-library package would
-// look external, so the active toolchain is asked once per process.
-var stdlibSourceRoot = sync.OnceValue(func() string {
-	return resolveGOROOT(func() (string, error) {
-		output, err := exec.Command("go", "env", "GOROOT").Output()
-		return string(output), err
-	}, build.Default.GOROOT)
+// goToolchainEnv describes the go command that loads packages.
+type goToolchainEnv struct {
+	GOROOT    string
+	GOVERSION string
+}
+
+// activeGoToolchain asks the go command on PATH once per process for both
+// values. build.Default.GOROOT and runtime.Version are fixed when solidlint
+// itself is compiled: prebuilt binaries carry the release builder's toolchain,
+// and local installs go stale after a Go upgrade. Either way every
+// standard-library package would look external and standard-library cache
+// keys would name the wrong release, so they serve only as fallbacks.
+var activeGoToolchain = sync.OnceValue(func() goToolchainEnv {
+	return resolveGoEnv(func() ([]byte, error) {
+		return exec.Command("go", "env", "-json", "GOROOT", "GOVERSION").Output()
+	}, goToolchainEnv{GOROOT: build.Default.GOROOT, GOVERSION: runtime.Version()})
 })
 
-func resolveGOROOT(goEnv func() (string, error), fallback string) string {
-	if output, err := goEnv(); err == nil {
-		if root := strings.TrimSpace(output); root != "" {
-			return root
-		}
+// resolveGoEnv parses `go env -json GOROOT GOVERSION` output, keeping the
+// fallback for any value the command could not supply.
+func resolveGoEnv(goEnv func() ([]byte, error), fallback goToolchainEnv) goToolchainEnv {
+	output, err := goEnv()
+	if err != nil {
+		return fallback
 	}
-	return fallback
+	var reported goToolchainEnv
+	if json.Unmarshal(output, &reported) != nil {
+		return fallback
+	}
+	resolved := fallback
+	if root := strings.TrimSpace(reported.GOROOT); root != "" {
+		resolved.GOROOT = root
+	}
+	if version := strings.TrimSpace(reported.GOVERSION); version != "" {
+		resolved.GOVERSION = version
+	}
+	return resolved
 }
+
+// stdlibSourceRoot is the GOROOT of the go command that loads packages.
+func stdlibSourceRoot() string { return activeGoToolchain().GOROOT }
+
+// activeGoVersion names the standard-library release packages are loaded
+// against; it keys cache entries that depend only on the standard library.
+func activeGoVersion() string { return activeGoToolchain().GOVERSION }
 
 var stdlibImportPaths sync.Map
 

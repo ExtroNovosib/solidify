@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,7 +54,7 @@ func runCheckCommand(args []string, build BuildInfo) int {
 		fmt.Fprintln(os.Stderr, "solidlint:", err)
 		return 2
 	}
-	if options.fail && hasSeverityAtLeast(result.issues, analyzer.Severity(options.failLevel)) {
+	if policy.options.fail && hasSeverityAtLeast(result.issues, analyzer.Severity(policy.options.failLevel)) {
 		return 1
 	}
 	return 0
@@ -223,31 +224,13 @@ type guidance struct {
 }
 
 func checkGuidance(metadata analyzer.Check) guidance {
+	example := checkExamples[metadata.ID]
 	result := guidance{
 		configuration: []string{"disabled_checks", "severities." + string(metadata.ID)},
 		remediation:   "Review the reported evidence in context; use a reason-bearing suppression or baseline only for reviewed intentional debt.",
-	}
-	switch metadata.Rule {
-	case analyzer.RuleSRP:
-		result.before = "type AccountService struct { store Store; mailer Mailer }; func (s *AccountService) Save() {}; func (s *AccountService) Send() {}"
-		result.after = "type AccountStore struct { store Store }; type AccountNotifier struct { mailer Mailer }"
-		result.exception = "Generated records and framework-owned DTOs can be broad when their external schema owns the shape."
-	case analyzer.RuleOCP:
-		result.before = "switch value.(type) { case CSV: encodeCSV(value); case JSON: encodeJSON(value) }"
-		result.after = "type Encoder interface { Encode() []byte }; func send(value Encoder) { _ = value.Encode() }"
-		result.exception = "A closed protocol decoder or short-lived compatibility shim may intentionally enumerate a finite set."
-	case analyzer.RuleLSP:
-		result.before = "return 0, fmt.Errorf(\"EOF: %w\", io.EOF)"
-		result.after = "return 0, io.EOF"
-		result.exception = "An adapter may normalize behavior only when its public contract explicitly documents the changed substitution semantics."
-	case analyzer.RuleISP:
-		result.before = "type Repository interface { Read(); Write(); Delete() }"
-		result.after = "type Reader interface { Read() }; func load(repo Reader) { repo.Read() }"
-		result.exception = "A framework facade or migration adapter may deliberately aggregate capabilities after its actual consumers are reviewed."
-	case analyzer.RuleDIP:
-		result.before = "type Service struct { client *PostgresClient }"
-		result.after = "type Store interface { Save() error }; type Service struct { store Store }"
-		result.exception = "A declared composition root must wire concrete implementations and can intentionally depend on infrastructure."
+		before:        example.before,
+		after:         example.after,
+		exception:     example.exception,
 	}
 	checkGuidanceByID(metadata.ID, &result)
 	return result
@@ -275,6 +258,14 @@ func checkGuidanceByID(id analyzer.CheckID, result *guidance) {
 	case analyzer.CheckISPUsageRatio:
 		addConfiguration(result, "thresholds.isp_min_methods", "thresholds.isp_usage_ratio_percent")
 		result.remediation = "Depend on the smallest role the consumer actually uses, unless the broader contract is intentional."
+	case analyzer.CheckSRPLowCohesionType:
+		addConfiguration(result, "srp.orchestrator_suffixes")
+	case analyzer.CheckISPUnusedDependency:
+		addConfiguration(result, "isp.wiring_aggregate_suffixes")
+	case analyzer.CheckDIPConcreteDependency:
+		addConfiguration(result, "allow_dependencies", "dip.domain_packages", "dip.data_bag_suffixes")
+	case analyzer.CheckDIPLayerImport:
+		addConfiguration(result, "dip.detail_imports")
 	default:
 		// The generic guidance above covers registered checks without a
 		// dedicated threshold or remediation pattern.
@@ -310,9 +301,12 @@ func runConfigCommand(args []string) int {
 		}
 		return 0
 	case "validate":
-		path := ".solidify.yml"
 		if len(args) > 2 {
 			return configUsageError("validate accepts at most one path")
+		}
+		path, err := defaultConfigPath()
+		if err != nil {
+			return configUsageError(err.Error())
 		}
 		if len(args) == 2 {
 			path = args[1]
@@ -338,6 +332,20 @@ func runConfigCommand(args []string) int {
 	default:
 		return configUsageError(fmt.Sprintf("unknown config command %q", args[0]))
 	}
+}
+
+// defaultConfigPath names the configuration file `config validate` checks
+// when no path is given: .solidlint.yml when it exists, else .solidify.yml.
+func defaultConfigPath() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		dir = "."
+	}
+	path, err := configpkg.FindInDir(dir)
+	if err != nil || path == "" {
+		return analyzer.ConfigFileNames[len(analyzer.ConfigFileNames)-1], err
+	}
+	return filepath.Base(path), nil
 }
 
 func runBaselineCommand(args []string, build BuildInfo) int {

@@ -15,7 +15,12 @@ const (
 	thresholdOCPSimilarity = "ocp_parallel_similarity_percent"
 )
 
-// FileConfig is the intentionally small .solidify.yml configuration surface.
+// ConfigFileNames are the discoverable configuration file names in order of
+// preference. .solidlint.yml matches the tool name; .solidify.yml predates it
+// and remains fully supported.
+var ConfigFileNames = []string{".solidlint.yml", ".solidify.yml"}
+
+// FileConfig is the intentionally small .solidlint.yml configuration surface.
 type FileConfig struct {
 	Profile                   Profile
 	EnabledRules              []string
@@ -34,24 +39,51 @@ type FileConfig struct {
 	OCPCompositionRoots       []string
 	DIPInfraErrorPackages     []string
 	DIPTransportTypes         []string
+	// Naming conventions; an empty list keeps the built-in default.
+	SRPOrchestratorSuffixes    []string
+	ISPWiringAggregateSuffixes []string
+	DIPDomainPackages          []string
+	DIPDataBagSuffixes         []string
+	DIPDetailImports           []string
 }
 
-func FindConfig(start string) string {
+// FindConfig returns the nearest configuration file at or above start. One
+// directory holding both accepted names is ambiguous and is an error.
+func FindConfig(start string) (string, error) {
 	start = configSearchStart(start)
 	absolute, err := filepath.Abs(start)
 	if err == nil {
 		start = absolute
 	}
 	for dir := start; ; dir = filepath.Dir(dir) {
-		candidate := filepath.Join(dir, ".solidify.yml")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
+		found, err := ConfigFileInDir(dir)
+		if found != "" || err != nil {
+			return found, err
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return ""
+			return "", nil
 		}
 	}
+}
+
+// ConfigFileInDir returns the configuration file in dir, if any, and rejects a
+// directory that holds more than one accepted name.
+func ConfigFileInDir(dir string) (string, error) {
+	var found []string
+	for _, name := range ConfigFileNames {
+		candidate := filepath.Join(dir, name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			found = append(found, candidate)
+		}
+	}
+	if len(found) > 1 {
+		return "", fmt.Errorf("%s contains both %s; keep one configuration file (%s is preferred)", dir, strings.Join(ConfigFileNames, " and "), ConfigFileNames[0])
+	}
+	if len(found) == 1 {
+		return found[0], nil
+	}
+	return "", nil
 }
 
 // FindConfigForTargets discovers configuration relative to the paths being
@@ -62,7 +94,10 @@ func FindConfigForTargets(targets []string) (string, error) {
 	configs := map[string]bool{}
 	var withoutConfig []string
 	for _, target := range targets {
-		configPath := FindConfig(target)
+		configPath, err := FindConfig(target)
+		if err != nil {
+			return "", err
+		}
 		if configPath == "" {
 			withoutConfig = append(withoutConfig, target)
 			continue
@@ -164,11 +199,24 @@ func (c FileConfig) Apply(cfg *Config) {
 	cfg.OCPCompositionRoots = append([]string(nil), c.OCPCompositionRoots...)
 	cfg.DIPInfraErrorPackages = append([]string(nil), c.DIPInfraErrorPackages...)
 	cfg.DIPTransportTypes = append([]string(nil), c.DIPTransportTypes...)
+	applyNonEmpty(&cfg.SRPOrchestratorSuffixes, c.SRPOrchestratorSuffixes)
+	applyNonEmpty(&cfg.ISPWiringAggregateSuffixes, c.ISPWiringAggregateSuffixes)
+	applyNonEmpty(&cfg.DIPDomainPackages, c.DIPDomainPackages)
+	applyNonEmpty(&cfg.DIPDataBagSuffixes, c.DIPDataBagSuffixes)
+	applyNonEmpty(&cfg.DIPDetailImports, c.DIPDetailImports)
 	for key, value := range c.Thresholds {
 		applyThresholdValue(cfg, key, value)
 	}
 	for _, id := range c.DisabledChecks {
 		cfg.DisabledChecks = append(cfg.DisabledChecks, CheckID(id))
+	}
+}
+
+// applyNonEmpty replaces a default convention list only when the file sets it,
+// so omitting a key keeps the built-in behavior.
+func applyNonEmpty(target *[]string, values []string) {
+	if len(values) > 0 {
+		*target = append([]string(nil), values...)
 	}
 }
 

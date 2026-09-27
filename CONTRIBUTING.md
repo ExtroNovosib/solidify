@@ -1,8 +1,8 @@
 # Contributing
 
-solidlint targets Go 1.25. Use `make check-fast` while iterating and run `make check` before submitting a rule change. Confirm the rule has all of the following:
+solidlint targets Go 1.25. Use `make check-fast` or the offline loop `go test -short ./...` while iterating, and run `make check` before submitting a rule change; `-short` skips E2E tests that need network access to build golangci-lint. Confirm the rule has all of the following:
 
-- a stable concrete ID, default severity, maturity, scope, syntax capability, surfaces, and safe-fix declaration in the registry;
+- a stable concrete ID, default severity, maturity, scope, syntax capability, and surfaces in the registry;
 - a check page describing intent, signals, thresholds, modes, surfaces, evidence, metrics, examples, limitations, configuration, suppression, baselines, and safe remediation;
 - positive, boundary or near-miss, and clean fixtures with exact IDs, subjects, identities, and relevant metrics;
 - a unique case in `testdata/evaluation/stable-v0.2.json` and an updated checked-in evaluation report when stable-rule evidence changes;

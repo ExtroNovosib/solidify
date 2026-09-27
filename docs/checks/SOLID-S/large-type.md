@@ -6,7 +6,7 @@ Reports a type only when several independent size and complexity signals agree. 
 
 Maturity: **stable**
 
-Analysis modes: conservative syntax fallback; full type information is used when available.
+Analysis modes: conservative syntax fallback; full type information is used when available. Syntax-only and ill-typed packages apply the same multi-signal rule to profiles built from syntax, so a type reported in both modes has the same evidence format, `warning` severity, subject, identity, and fingerprint. The only typed-only exemption is the cohesion (`min_tcc_percent`) skip, which needs resolved field selections; without it, syntax mode can report a highly cohesive type that typed analysis skips.
 
 Surfaces: standalone CLI and both GolangCI plugin modes.
 

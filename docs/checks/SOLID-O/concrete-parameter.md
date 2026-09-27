@@ -2,6 +2,13 @@
 
 Heuristic check for **concrete parameter** smells in Go code.
 
+Only a pointer parameter to a named type declared in another package, used
+solely through at least `ocp_min_concrete_parameter_methods` methods, is
+reported. Like `SOLID-D/concrete-dependency` constructor findings, parameters
+whose type is declared in the analyzed package and parameters passed by value
+are skipped: the package's own types are its vocabulary, and a by-value copy is
+not a collaborator a caller could substitute.
+
 Types listed in `allow_dependencies` are excluded so an intentional concrete
 dependency is treated consistently by both DIP and OCP checks.
 

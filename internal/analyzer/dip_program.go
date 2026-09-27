@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// dipBuiltinDetailImports is the default for dip.detail_imports.
 var dipBuiltinDetailImports = []string{
 	"database/sql",
 	"database/sql/driver",
@@ -107,8 +108,8 @@ func emitDIPLayerImport(pkgs []*packageFiles, cfg Config) []Issue {
 }
 
 func dipForbiddenLogicImport(importPath string, cfg Config) bool {
-	for _, builtin := range dipBuiltinDetailImports {
-		if importPath == builtin {
+	for _, detail := range cfg.DIPDetailImports {
+		if importPath == detail {
 			return true
 		}
 	}

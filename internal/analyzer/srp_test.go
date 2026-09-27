@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"go/ast"
 	"strings"
 	"testing"
@@ -38,28 +39,108 @@ func (b *Box[T]) Put(T) {}
 	_ = fset
 }
 
+// largeTypeFixture declares Widget with eleven heterogeneous fields and eleven
+// exported methods, each with four branches and its own field, so methods,
+// exported methods, fields, and WMC (11*5 = 55) exceed the defaults while TCC
+// stays at zero.
+func largeTypeFixture(pkgName string) string {
+	fieldTypes := []string{"int", "string", "bool", "float64", "[]byte", "map[string]int", "chan int", "error", "rune", "uint", "[]string"}
+	var source strings.Builder
+	source.WriteString("package " + pkgName + "\n\ntype Widget struct {\n")
+	for index, fieldType := range fieldTypes {
+		fmt.Fprintf(&source, "\tfield%c %s\n", 'A'+index, fieldType)
+	}
+	source.WriteString("}\n")
+	for index := range fieldTypes {
+		fmt.Fprintf(&source, `
+func (w *Widget) Method%c(value int) int {
+	if value > 1 {
+		value++
+	}
+	if value > 2 {
+		value--
+	}
+	if value > 3 {
+		value *= 2
+	}
+	if value > 4 {
+		value /= 2
+	}
+	_ = w.field%c
+	return value
+}
+`, 'A'+index, 'A'+index)
+	}
+	return source.String()
+}
+
 func TestCheckSRP_TooManyMethods(t *testing.T) {
-	src := `package p
-
-type Widget struct{}
-`
-	for i := 0; i < 4; i++ {
-		src += "func (w *Widget) M" + string(rune('A'+i)) + "() {}\n"
+	fset, files := parseSource(t, largeTypeFixture("p"))
+	var large []Issue
+	for _, issue := range CheckSRP(fset, files, DefaultConfig()) {
+		if issue.Check == CheckSRPLargeType {
+			large = append(large, issue)
+		}
 	}
-
-	fset, files := parseSource(t, src)
-	cfg := DefaultConfig()
-	cfg.MaxMethodsPerType = 3
-
-	issues := CheckSRP(fset, files, cfg)
-	if len(issues) != 1 {
-		t.Fatalf("got %d issues, want 1", len(issues))
+	if len(large) != 1 {
+		t.Fatalf("got %d large-type issues, want 1: %v", len(large), large)
 	}
-	if issues[0].Rule != RuleSRP {
-		t.Errorf("rule = %q, want SOLID-S", issues[0].Rule)
+	issue := large[0]
+	if issue.Rule != RuleSRP || issue.Severity != SeverityWarning {
+		t.Errorf("rule/severity = %s/%s, want SOLID-S/warning", issue.Rule, issue.Severity)
 	}
-	if !strings.Contains(issues[0].Message, `type "Widget" has 4 methods`) {
-		t.Errorf("unexpected message: %s", issues[0].Message)
+	if !strings.HasPrefix(issue.Evidence, "large-type:type=Widget;methods=11;exported_methods=11;fields=11;") || !strings.HasSuffix(issue.Evidence, ";signals=4") {
+		t.Errorf("unexpected evidence: %s", issue.Evidence)
+	}
+}
+
+func TestCheckSRPSyntaxLargeTypeUsesMultiSignalRule(t *testing.T) {
+	source := "package p\n\ntype Widget struct{}\n"
+	for index := 0; index < 11; index++ {
+		source += fmt.Sprintf("func (w *Widget) Method%c() {}\n", 'A'+index)
+	}
+	fset, files := parseSource(t, source)
+	for _, issue := range CheckSRP(fset, files, DefaultConfig()) {
+		if issue.Check == CheckSRPLargeType {
+			t.Fatalf("method count alone produced a large-type finding: %v", issue)
+		}
+	}
+}
+
+func TestSyntaxLargeTypeFingerprintMatchesTyped(t *testing.T) {
+	root := t.TempDir()
+	writeModuleFixture(t, root, map[string]string{"widget/widget.go": largeTypeFixture("widget")})
+	byMode := map[string]Issue{}
+	for _, mode := range []string{"syntax", "types"} {
+		pkgs, _, err := LoadWorkspace([]string{root}, false, mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := DefaultConfig()
+		cfg.CacheEnabled = false
+		cfg.AnalysisMode = mode
+		plan, err := NewExecutionPlan(cfg, map[Rule]bool{RuleSRP: true}, SurfaceCLI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		issues, _ := RunPlan(pkgs, cfg, plan)
+		var large []Issue
+		for _, issue := range issues {
+			if issue.Check == CheckSRPLargeType {
+				large = append(large, issue)
+			}
+		}
+		if len(large) != 1 {
+			t.Fatalf("%s mode large-type findings = %v, want one", mode, large)
+		}
+		byMode[mode] = large[0]
+	}
+	syntax, typed := byMode["syntax"], byMode["types"]
+	if syntax.Identity != typed.Identity || syntax.Subject != typed.Subject || syntax.Fingerprint() != typed.Fingerprint() {
+		t.Fatalf("syntax and typed large-type differ:\nsyntax: %s %s %s\ntyped:  %s %s %s", syntax.Subject, syntax.Identity, syntax.Fingerprint(), typed.Subject, typed.Identity, typed.Fingerprint())
+	}
+	if syntax.Identity != "large-type;type=Widget" || syntax.Severity != typed.Severity || syntax.Evidence != typed.Evidence || syntax.Pos != typed.Pos {
+		t.Fatalf("syntax = %+v\ntyped = %+v", syntax, typed)
 	}
 }
 

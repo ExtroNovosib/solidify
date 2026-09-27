@@ -4,27 +4,61 @@ import (
 	"errors"
 	"go/build"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestResolveGOROOTPrefersActiveToolchain(t *testing.T) {
+	fallback := goToolchainEnv{GOROOT: "/build/go", GOVERSION: "go1.0"}
 	cases := []struct {
 		name   string
 		output string
 		err    error
 		want   string
 	}{
-		{name: "active toolchain", output: "/active/go\n", want: "/active/go"},
+		{name: "active toolchain", output: `{"GOROOT": "/active/go\n", "GOVERSION": "go1.99.0"}`, want: "/active/go"},
 		{name: "go command unavailable", err: errors.New("go: not found"), want: "/build/go"},
-		{name: "empty output", output: " \n", want: "/build/go"},
+		{name: "empty output", output: `{"GOROOT": " \n"}`, want: "/build/go"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := resolveGOROOT(func() (string, error) { return tc.output, tc.err }, "/build/go")
+			got := resolveGoEnv(func() ([]byte, error) { return []byte(tc.output), tc.err }, fallback).GOROOT
 			if got != tc.want {
-				t.Fatalf("resolveGOROOT = %q, want %q", got, tc.want)
+				t.Fatalf("resolved GOROOT = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestResolveGoEnvValues(t *testing.T) {
+	fallback := goToolchainEnv{GOROOT: "/build/go", GOVERSION: "go1.0"}
+	cases := []struct {
+		name   string
+		output string
+		err    error
+		want   goToolchainEnv
+	}{
+		{name: "both values", output: "{\n\t\"GOROOT\": \"/active/go\",\n\t\"GOVERSION\": \"go1.26.3\"\n}\n", want: goToolchainEnv{GOROOT: "/active/go", GOVERSION: "go1.26.3"}},
+		{name: "missing version", output: `{"GOROOT": "/active/go"}`, want: goToolchainEnv{GOROOT: "/active/go", GOVERSION: "go1.0"}},
+		{name: "blank root", output: `{"GOROOT": "", "GOVERSION": "go1.26.3"}`, want: goToolchainEnv{GOROOT: "/build/go", GOVERSION: "go1.26.3"}},
+		{name: "malformed JSON", output: "/active/go\n", want: fallback},
+		{name: "go command unavailable", err: errors.New("go: not found"), want: fallback},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			got := resolveGoEnv(func() ([]byte, error) {
+				calls++
+				return []byte(tc.output), tc.err
+			}, fallback)
+			if got != tc.want || calls != 1 {
+				t.Fatalf("resolveGoEnv = %+v after %d go env call(s), want %+v after one", got, calls, tc.want)
+			}
+		})
+	}
+	first, second := activeGoToolchain(), activeGoToolchain()
+	if first != second || first.GOROOT == "" || !strings.HasPrefix(first.GOVERSION, "go") {
+		t.Fatalf("active toolchain = %+v then %+v, want one stable resolved value", first, second)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,8 +13,79 @@ import (
 	baselinepkg "github.com/ExtroNovosib/solidify/internal/baseline"
 )
 
-func run(args []string) int {
-	return Run(args, BuildInfo{Version: "dev", Commit: "test", BuildDate: "test"})
+var testBuild = BuildInfo{Version: "dev", Commit: "test", BuildDate: "test"}
+
+func run(t *testing.T, args []string) int {
+	t.Helper()
+	return Run(isolateCache(t, args), testBuild)
+}
+
+// isolateCache points analysis commands at a per-test cache directory so tests
+// never read or write the user cache. Arguments that already choose a cache
+// setting, and commands that take no analysis flags, are returned unchanged.
+func isolateCache(t *testing.T, args []string) []string {
+	t.Helper()
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-cache") || strings.HasPrefix(arg, "--cache") {
+			return args
+		}
+	}
+	insertAt := 0
+	if len(args) > 0 {
+		switch args[0] {
+		case "check", "stats":
+			insertAt = 1
+		case "baseline":
+			insertAt = min(2, len(args))
+		case "checks", "config", "help", "-h", "--help", "-help":
+			return args
+		}
+	}
+	isolated := make([]string, 0, len(args)+2)
+	isolated = append(isolated, args[:insertAt]...)
+	isolated = append(isolated, "-cache-dir", t.TempDir())
+	return append(isolated, args[insertAt:]...)
+}
+
+func TestRunHelperIsolatesCacheDirectory(t *testing.T) {
+	args := isolateCache(t, []string{"-fail=false", "testdata/clean"})
+	index := slices.Index(args, "-cache-dir")
+	if index < 0 || index+1 >= len(args) {
+		t.Fatalf("isolated args = %v, want -cache-dir <dir>", args)
+	}
+	dir := args[index+1]
+	if code := Run(args, testBuild); code != 0 {
+		t.Fatalf("run exit code = %d, want 0", code)
+	}
+	if info, err := os.Stat(filepath.Join(dir, "entries")); err != nil || !info.IsDir() {
+		t.Fatalf("isolated cache directory %s has no entries/: %v", dir, err)
+	}
+
+	for _, args := range [][]string{
+		{"check", "testdata/clean"},
+		{"stats", "-format=json", "testdata/clean"},
+		{"baseline", "diff", "-baseline", "b.json", "testdata/clean"},
+	} {
+		got := isolateCache(t, args)
+		prefix := 1
+		if args[0] == "baseline" {
+			prefix = 2
+		}
+		if !slices.Equal(got[:prefix], args[:prefix]) || got[prefix] != "-cache-dir" || !slices.Equal(got[prefix+2:], args[prefix:]) {
+			t.Fatalf("isolateCache(%v) = %v", args, got)
+		}
+	}
+	for _, args := range [][]string{
+		{"-cache=false", "testdata/clean"},
+		{"-cache-dir", "explicit", "testdata/clean"},
+		{"checks", "list"},
+		{"config", "init"},
+		{"--help"},
+	} {
+		if got := isolateCache(t, args); !slices.Equal(got, args) {
+			t.Fatalf("isolateCache(%v) = %v, want unchanged", args, got)
+		}
+	}
 }
 
 func TestMain(m *testing.M) {
@@ -56,15 +128,15 @@ func TestPortableBaselineMatchesAcrossCheckoutDirectories(t *testing.T) {
 		t.Fatalf("checkout A findings = %v, want one", firstIssues)
 	}
 	baselinePath := filepath.Join(t.TempDir(), "baseline.json")
-	if writeErr := writeBaseline(baselinePath, firstIssues, "reviewed portability contract"); writeErr != nil {
+	if writeErr := baselinepkg.Write(baselinePath, firstIssues, "reviewed portability contract"); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	accepted, version, err := readBaselineInfo(baselinePath)
+	accepted, err := baselinepkg.Read(baselinePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 5 {
-		t.Fatalf("baseline version = %d, want 5", version)
+	if baselinepkg.Version != 5 {
+		t.Fatalf("baseline version = %d, want 5", baselinepkg.Version)
 	}
 
 	secondPackages, _, err := analyzer.LoadWorkspace([]string{second}, false, "types")
@@ -140,56 +212,56 @@ func TestParseRules_Empty(t *testing.T) {
 }
 
 func TestRun_CleanTestdata(t *testing.T) {
-	if code := run([]string{"-fail=false", "testdata/clean"}); code != 0 {
+	if code := run(t, []string{"-fail=false", "testdata/clean"}); code != 0 {
 		t.Fatalf("run exit code = %d, want 0", code)
 	}
 }
 
 func TestRun_DotDotDotPath(t *testing.T) {
-	if code := run([]string{"-analysis=types", "-fail=false", "testdata/clean/..."}); code != 0 {
+	if code := run(t, []string{"-analysis=types", "-fail=false", "testdata/clean/..."}); code != 0 {
 		t.Fatalf("run ./... exit = %d", code)
 	}
 }
 
 func TestRun_ViolationsTestdata(t *testing.T) {
-	if code := run([]string{"-fail=false", "testdata/violations"}); code != 0 {
+	if code := run(t, []string{"-fail=false", "testdata/violations"}); code != 0 {
 		t.Fatalf("run exit code = %d, want 0 with -fail=false", code)
 	}
 }
 
 func TestRun_FailOnFindings(t *testing.T) {
-	if code := run([]string{"testdata/violations"}); code != 1 {
+	if code := run(t, []string{"testdata/violations"}); code != 1 {
 		t.Fatalf("run exit code = %d, want 1", code)
 	}
 }
 
 func TestRun_JSONFormat(t *testing.T) {
-	if code := run([]string{"-format=json", "-fail=false", "testdata/clean"}); code != 0 {
+	if code := run(t, []string{"-format=json", "-fail=false", "testdata/clean"}); code != 0 {
 		t.Fatalf("run exit code = %d, want 0", code)
 	}
 }
 
 func TestRun_UnknownFormat(t *testing.T) {
-	if code := run([]string{"-format=yaml", "-fail=false", "testdata/clean"}); code != 2 {
+	if code := run(t, []string{"-format=yaml", "-fail=false", "testdata/clean"}); code != 2 {
 		t.Fatalf("run exit code = %d, want 2", code)
 	}
 }
 
 func TestRun_UnknownAnalysis(t *testing.T) {
-	if code := run([]string{"-analysis=semantic", "-fail=false", "testdata/clean"}); code != 2 {
+	if code := run(t, []string{"-analysis=semantic", "-fail=false", "testdata/clean"}); code != 2 {
 		t.Fatalf("run exit code = %d, want 2", code)
 	}
 }
 
 func TestRun_Version(t *testing.T) {
-	if code := run([]string{"-version"}); code != 0 {
+	if code := run(t, []string{"-version"}); code != 0 {
 		t.Fatalf("run exit code = %d, want 0", code)
 	}
 }
 
 func TestSingleGoFileUsesContainingPackageWithoutObsoleteTip(t *testing.T) {
 	stderr := captureStderr(t, func() {
-		code := run([]string{"-fail=false", "testdata/verdict/god_console/console.go"})
+		code := run(t, []string{"-fail=false", "testdata/verdict/god_console/console.go"})
 		if code != 0 {
 			t.Fatalf("run exit code = %d, want 0", code)
 		}
@@ -241,7 +313,7 @@ func captureStdout(t *testing.T, fn func()) string {
 
 func TestPrintConfigExitsBeforeAnalysis(t *testing.T) {
 	stdout := captureStdout(t, func() {
-		if code := run([]string{"-print-config", "-fail=false", "testdata/clean"}); code != 0 {
+		if code := run(t, []string{"-print-config", "-fail=false", "testdata/clean"}); code != 0 {
 			t.Fatalf("run exit code = %d, want 0", code)
 		}
 	})
@@ -267,11 +339,11 @@ func TestBaselineStalePolicies(t *testing.T) {
 	if err := os.WriteFile(baselinePath, []byte(`{"version":4,"fingerprints":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := run([]string{"-baseline", baselinePath, "-baseline-stale=error", "-fail=false", "testdata/clean"}); code != 1 {
+	if code := run(t, []string{"-baseline", baselinePath, "-baseline-stale=error", "-fail=false", "testdata/clean"}); code != 1 {
 		t.Fatalf("baseline-stale=error exit = %d, want 1", code)
 	}
 	stderr := captureStderr(t, func() {
-		if code := run([]string{"-baseline", baselinePath, "-baseline-stale=ignore", "-fail=false", "testdata/clean"}); code != 0 {
+		if code := run(t, []string{"-baseline", baselinePath, "-baseline-stale=ignore", "-fail=false", "testdata/clean"}); code != 0 {
 			t.Fatalf("baseline-stale=ignore exit = %d, want 0", code)
 		}
 	})
@@ -294,17 +366,17 @@ func TestExpiredBaselinePolicies(t *testing.T) {
 		t.Fatal(err)
 	}
 	warnStderr := captureStderr(t, func() {
-		if code := run([]string{"-baseline", path, "-baseline-expired=warn", "-fail=false", "testdata/clean"}); code != 0 {
+		if code := run(t, []string{"-baseline", path, "-baseline-expired=warn", "-fail=false", "testdata/clean"}); code != 0 {
 			t.Fatalf("baseline-expired=warn exit = %d, want 0", code)
 		}
 	})
 	if !strings.Contains(warnStderr, "expired entry") {
 		t.Fatalf("baseline-expired=warn did not report expiry: %q", warnStderr)
 	}
-	if code := run([]string{"-baseline", path, "-baseline-expired=error", "-fail=false", "testdata/clean"}); code != 1 {
+	if code := run(t, []string{"-baseline", path, "-baseline-expired=error", "-fail=false", "testdata/clean"}); code != 1 {
 		t.Fatalf("baseline-expired=error exit = %d, want 1", code)
 	}
-	if code := run([]string{"-baseline-expired=ignore", "-fail=false", "testdata/clean"}); code != 2 {
+	if code := run(t, []string{"-baseline-expired=ignore", "-fail=false", "testdata/clean"}); code != 2 {
 		t.Fatalf("baseline-expired=ignore exit = %d, want 2", code)
 	}
 }
@@ -313,7 +385,7 @@ func TestWriteBaselineRejectsIdentityCollision(t *testing.T) {
 	issue := analyzer.Issue{Rule: analyzer.RuleISP, Check: analyzer.CheckISPFatInterface, Message: "fat", Evidence: "six", Subject: "p.Wide", Identity: "interface=Wide"}
 	issue.Pos.Filename = "a.go"
 	path := filepath.Join(t.TempDir(), "baseline.json")
-	if err := writeBaseline(path, []analyzer.Issue{issue, issue}, "reviewed duplicate identity"); err == nil || !strings.Contains(err.Error(), "identity collision") {
+	if err := baselinepkg.Write(path, []analyzer.Issue{issue, issue}, "reviewed duplicate identity"); err == nil || !strings.Contains(err.Error(), "identity collision") {
 		t.Fatalf("collision error = %v", err)
 	}
 }
@@ -326,7 +398,7 @@ func TestRun_DoesNotWriteArtifactsIntoScannedTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc main() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code := run([]string{"-cache-dir", filepath.Join(root, "external-cache"), "-fail=false", root}); code != 0 {
+	if code := run(t, []string{"-cache-dir", filepath.Join(root, "external-cache"), "-fail=false", root}); code != 0 {
 		t.Fatalf("run exit code = %d, want 0", code)
 	}
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {

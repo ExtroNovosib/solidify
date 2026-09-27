@@ -9,6 +9,7 @@ type File = analyzer.FileConfig
 
 func Load(path string) (File, error)                  { return analyzer.LoadFileConfig(path) }
 func FindForTargets(targets []string) (string, error) { return analyzer.FindConfigForTargets(targets) }
+func FindInDir(dir string) (string, error)            { return analyzer.ConfigFileInDir(dir) }
 func ApplyThresholds(cfg *analyzer.Config, thresholds map[string]int) error {
 	return analyzer.ApplyThresholds(cfg, thresholds)
 }

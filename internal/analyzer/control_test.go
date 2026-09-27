@@ -3,6 +3,7 @@ package analyzer
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -95,16 +96,99 @@ func TestLoadFileConfigRejectsUnknownFieldsAndSeverityTargets(t *testing.T) {
 		"conflicting-alias": "enabled_rules: [S]\nenabled-rules: [I]\n",
 		"unknown-disabled":  "disabled_checks: [SOLID-X/not-real]\n",
 		"unknown-ocp-field": "ocp:\n  typo: true\n",
+		"misspelled-srp":    "fail_level: warning\nsrp:\n  orchestrator_sufixes: [Handler]\n",
+		"misspelled-isp":    "isp:\n  wiring_aggregate_suffix: [Deps]\n",
+		"misspelled-dip":    "dip:\n  domain_package: [example.com/model]\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), ".solidify.yml")
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := LoadFileConfig(path); err == nil {
+			_, err := LoadFileConfig(path)
+			if err == nil {
 				t.Fatal("expected strict configuration error")
 			}
+			if name == "misspelled-srp" && !strings.Contains(err.Error(), ".solidify.yml:3:") {
+				t.Fatalf("misspelled srp key error lacks its line number: %v", err)
+			}
 		})
+	}
+}
+
+func TestLoadFileConfigConventionSections(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".solidify.yml")
+	content := `srp:
+  orchestrator_suffixes: [Handler, Controller]
+isp:
+  wiring_aggregate_suffixes: [Deps, Wiring]
+dip:
+  domain_packages: [example.com/app/model/**]
+  data_bag_suffixes: [Config, Options]
+  detail_imports: [database/sql, github.com/redis/go-redis/v9]
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fileConfig, err := LoadFileConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := DefaultConfig()
+	fileConfig.Apply(&cfg)
+	for name, check := range map[string]struct{ got, want []string }{
+		"srp.orchestrator_suffixes":     {cfg.SRPOrchestratorSuffixes, []string{"Handler", "Controller"}},
+		"isp.wiring_aggregate_suffixes": {cfg.ISPWiringAggregateSuffixes, []string{"Deps", "Wiring"}},
+		"dip.domain_packages":           {cfg.DIPDomainPackages, []string{"example.com/app/model/**"}},
+		"dip.data_bag_suffixes":         {cfg.DIPDataBagSuffixes, []string{"Config", "Options"}},
+		"dip.detail_imports":            {cfg.DIPDetailImports, []string{"database/sql", "github.com/redis/go-redis/v9"}},
+	} {
+		if !slices.Equal(check.got, check.want) {
+			t.Errorf("%s = %v, want %v", name, check.got, check.want)
+		}
+	}
+	if !isWiringAggregateName("ServiceWiring", cfg) || isWiringAggregateName("ServiceBundle", cfg) {
+		t.Fatal("isp.wiring_aggregate_suffixes did not replace the default suffixes")
+	}
+	if !isConfigDataBagType("ServerOptions", cfg) || !dipForbiddenLogicImport("github.com/redis/go-redis/v9", cfg) || dipForbiddenLogicImport("net/http", cfg) {
+		t.Fatal("dip convention lists did not replace the defaults")
+	}
+}
+
+func TestConventionDefaultsPreserveBehavior(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".solidify.yml")
+	if err := os.WriteFile(path, []byte("srp: {}\nisp: {}\ndip:\n  data_bag_suffixes: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fileConfig, err := LoadFileConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := DefaultConfig()
+	fileConfig.Apply(&cfg)
+	for name, check := range map[string]struct{ got, want []string }{
+		"srp.orchestrator_suffixes":     {cfg.SRPOrchestratorSuffixes, []string{"Handler"}},
+		"isp.wiring_aggregate_suffixes": {cfg.ISPWiringAggregateSuffixes, []string{"Bundle", "Deps", "Dependencies", "Stores"}},
+		"dip.domain_packages":           {cfg.DIPDomainPackages, nil},
+		"dip.data_bag_suffixes":         {cfg.DIPDataBagSuffixes, []string{"Config"}},
+		"dip.detail_imports":            {cfg.DIPDetailImports, []string{"database/sql", "database/sql/driver", "net/http", "os/exec"}},
+	} {
+		if !slices.Equal(check.got, check.want) {
+			t.Errorf("%s = %v, want default %v", name, check.got, check.want)
+		}
+	}
+	for _, name := range []string{"AppBundle", "AppDeps", "AppDependencies", "AppStores"} {
+		if !isWiringAggregateName(name, cfg) {
+			t.Errorf("default wiring aggregate suffix lost for %s", name)
+		}
+	}
+	for _, detail := range []string{"database/sql", "database/sql/driver", "net/http", "os/exec"} {
+		if !dipForbiddenLogicImport(detail, cfg) {
+			t.Errorf("default detail import lost: %s", detail)
+		}
+	}
+	if !isConfigDataBagType("ServerConfig", cfg) || isConfigDataBagType("Server", cfg) {
+		t.Error("default Config data-bag suffix changed")
 	}
 }
 
@@ -247,5 +331,51 @@ func TestFindConfigForTargetsRejectsMixedScopes(t *testing.T) {
 
 	if _, err := FindConfigForTargets([]string{configured, unconfigured}); err == nil {
 		t.Fatal("expected mixed configuration scopes to require -config")
+	}
+}
+
+func TestFindConfigAcceptsSolidlintFilename(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, ".solidlint.yml")
+	if err := os.WriteFile(configPath, []byte("enabled_rules: [D]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "internal", "service")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := FindConfig(nested); err != nil || got != configPath {
+		t.Fatalf("FindConfig = %q, %v; want %q", got, err, configPath)
+	}
+	if got, err := FindConfigForTargets([]string{filepath.Join(nested, "...")}); err != nil || got != configPath {
+		t.Fatalf("FindConfigForTargets = %q, %v; want %q", got, err, configPath)
+	}
+
+	// The nearest directory wins regardless of which accepted name it uses.
+	legacy := filepath.Join(nested, ".solidify.yml")
+	if err := os.WriteFile(legacy, []byte("enabled_rules: [S]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := FindConfig(nested); err != nil || got != legacy {
+		t.Fatalf("FindConfig = %q, %v; want nearer %q", got, err, legacy)
+	}
+}
+
+func TestFindConfigRejectsBothConfigFilenames(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{".solidlint.yml", ".solidify.yml"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("enabled_rules: [D]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nested := filepath.Join(root, "pkg")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := FindConfig(nested); err == nil || got != "" || !strings.Contains(err.Error(), root) {
+		t.Fatalf("FindConfig = %q, %v; want an error naming %s", got, err, root)
+	}
+	if _, err := FindConfigForTargets([]string{nested}); err == nil || !strings.Contains(err.Error(), ".solidlint.yml and .solidify.yml") {
+		t.Fatalf("FindConfigForTargets error = %v", err)
 	}
 }

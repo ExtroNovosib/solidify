@@ -52,7 +52,6 @@ type Check struct {
 	Maturity    Maturity
 	Syntax      SyntaxSupport
 	Surfaces    Surface
-	HasSafeFix  bool
 	DefaultSev  Severity
 	RunnerGroup string
 	RunPackage  func(pkg *packageFiles, cfg Config) []Issue

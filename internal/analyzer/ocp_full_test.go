@@ -13,7 +13,11 @@ func TestCheckOCPProgramFullSignals(t *testing.T) {
 	}
 	source := `package p
 
-import "fmt"
+import (
+	"fmt"
+
+	"example.com/ocptest/orders"
+)
 
 type Shape interface { Area() float64; Perimeter() float64 }
 type Circle struct{ R float64 }
@@ -54,10 +58,7 @@ type Item struct{ Kind Kind }
 func Validate(i Item) bool { switch i.Kind { case KindA: return true; case KindB: return false; case KindC: return true }; return false }
 func ExportItem(i Item) bool { switch i.Kind { case KindA: return true; case KindB: return false; case KindC: return true }; return false }
 
-func ProcessOrder(o *Order) float64 { return o.Validate() + o.Total() }
-type Order struct{}
-func (*Order) Validate() float64 { return 1 }
-func (*Order) Total() float64 { return 2 }
+func ProcessOrder(o *orders.Order) float64 { return o.Validate() + o.Total() }
 
 func MakeShape(kind string) Shape {
 	switch kind { case "circle": return Circle{}; case "square": return Square{}; case "triangle": return Triangle{}; case "circle2": return Circle{}; case "square2": return Square{} }
@@ -75,7 +76,21 @@ func ProcessTriangle(v *Triangle) float64 { total := v.Area(); if total > 0 { to
 	if err := os.WriteFile(filepath.Join(dir, "p.go"), []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pkgs, warnings, err := LoadWorkspace([]string{dir}, false, "types")
+	// Concrete-parameter findings need a pointer to a type owned by another
+	// package; the package's own types are its vocabulary.
+	ordersSource := `package orders
+
+type Order struct{}
+func (*Order) Validate() float64 { return 1 }
+func (*Order) Total() float64 { return 2 }
+`
+	if err := os.MkdirAll(filepath.Join(dir, "orders"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "orders", "orders.go"), []byte(ordersSource), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkgs, warnings, err := LoadWorkspace([]string{dir + "/..."}, false, "types")
 	if err != nil {
 		t.Fatalf("LoadWorkspace: %v", err)
 	}

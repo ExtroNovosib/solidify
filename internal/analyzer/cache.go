@@ -18,12 +18,13 @@ import (
 
 // Bump the version when cache-key semantics change so entries produced by an
 // older solidlint cannot be reused with the new analyzer.
-const cacheVersion = "solidlint-cache-v10"
+const cacheVersion = "solidlint-cache-v11"
 
 type packageCache struct {
 	root        string
 	config      string
 	version     string
+	workspace   map[string]bool // package paths loaded for this run
 	hits        atomic.Int64
 	misses      atomic.Int64
 	stale       atomic.Int64
@@ -31,43 +32,35 @@ type packageCache struct {
 	hashNanos   atomic.Int64
 	loadNanos   atomic.Int64
 	sourceReads atomic.Int64
+	apiCount    atomic.Int64
 	hashes      sync.Map
 	apiDigests  sync.Map
+	moduleKeys  sync.Map
 }
 
-func newPackageCache(root string, cfg Config, plan ExecutionPlan) *packageCache {
-	// Cache location and diagnostics do not affect findings; keying on them
-	// would make -cache-debug report a cold cache after every normal run.
-	keyConfig := cfg
-	keyConfig.CacheDir, keyConfig.CacheEnabled, keyConfig.CacheDiagnostics = "", false, false
-	configData, _ := json.Marshal(struct {
-		Config       Config
-		PlanIdentity string
-		Build        string
-	}{keyConfig, plan.Identity(), executableDigest()})
-	sum := sha256.Sum256(configData)
+// newPackageCache keys entries by the policy in cacheKeyMaterial and the
+// running build. workspace lists the package paths loaded for this run; their
+// importers keep exported-API dependency keys because they change in place.
+func newPackageCache(root string, cfg Config, plan ExecutionPlan, workspace map[string]bool) *packageCache {
+	root = filepath.Clean(root)
 	return &packageCache{
-		root:    filepath.Clean(root),
-		config:  fmt.Sprintf("%x", sum[:8]),
-		version: cfg.ToolVersion,
+		root:      root,
+		config:    newCacheKeyMaterial(cfg, plan, executableDigest(root)).digest(),
+		version:   cfg.ToolVersion,
+		workspace: workspace,
 	}
 }
 
-// executableDigest identifies the running analyzer build. Version strings do
-// not: test binaries and unversioned builds all report "dev", and dirty builds
-// of one commit share a pseudo-version, so they would reuse each other's
-// findings after an analyzer change.
-var executableDigest = sync.OnceValue(func() string {
-	path, err := os.Executable()
-	if err != nil {
-		return ""
+// workspacePackagePaths returns the package paths loaded for a run.
+func workspacePackagePaths(pkgs []*packageFiles) map[string]bool {
+	paths := make(map[string]bool, len(pkgs))
+	for _, pkg := range pkgs {
+		if pkg != nil && pkg.pkgPath != "" {
+			paths[pkg.pkgPath] = true
+		}
 	}
-	digest, err := fileContentDigest(path)
-	if err != nil {
-		return ""
-	}
-	return digest
-})
+	return paths
+}
 
 func (c *packageCache) load(pkg *packageFiles, checkID CheckID) ([]Issue, bool) {
 	if c == nil || pkg == nil {
@@ -114,8 +107,8 @@ func (c *packageCache) diagnostics() string {
 	hashMs := float64(c.hashNanos.Load()) / 1e6
 	loadMs := float64(c.loadNanos.Load()) / 1e6
 	return fmt.Sprintf(
-		"cache location=%s version=%s hits=%d misses=%d invalidations=%d corrupt=%d source_reads=%d hash_time_ms=%.2f load_time_ms=%.2f",
-		c.root, c.version, c.hits.Load(), c.misses.Load(), c.stale.Load(), c.corrupt.Load(), c.sourceReads.Load(), hashMs, loadMs,
+		"cache location=%s version=%s hits=%d misses=%d invalidations=%d corrupt=%d source_reads=%d api_digests=%d hash_time_ms=%.2f load_time_ms=%.2f",
+		c.root, c.version, c.hits.Load(), c.misses.Load(), c.stale.Load(), c.corrupt.Load(), c.sourceReads.Load(), c.apiCount.Load(), hashMs, loadMs,
 	)
 }
 
@@ -127,9 +120,6 @@ func (c *packageCache) store(pkg *packageFiles, checkID CheckID, issues []Issue)
 }
 
 func (c *packageCache) storeEntry(path, hash string, issues []Issue) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
 	cached := make([]cachedIssue, 0, len(issues))
 	for _, issue := range issues {
 		cached = append(cached, cachedIssue{Issue: issue})
@@ -143,26 +133,9 @@ func (c *packageCache) storeEntry(path, hash string, issues []Issue) {
 	if err != nil {
 		return
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".solidlint-cache-*.tmp")
-	if err != nil {
-		return
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return
-	}
 	// No fsync: a torn or empty entry fails decoding or hash validation and is
 	// recomputed, while syncing every entry dominated cold-cache runs.
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return
-	}
-	if err := tmp.Close(); err != nil {
-		return
-	}
-	_ = os.Rename(tmpName, path)
+	writeFileAtomically(path, data)
 }
 
 type cachedIssue struct {
@@ -306,12 +279,21 @@ func (c *packageCache) dependencyAPIDigest(pkg *packageFiles) string {
 	for _, path := range paths {
 		h.Write([]byte(path))
 		h.Write([]byte{0})
-		imported := pkg.typeImports[path]
-		if imported == nil {
-			continue
+		switch kind, key := c.classifyImport(pkg, path); kind {
+		case importKeyStdlib:
+			h.Write([]byte("stdlib:" + key))
+			h.Write([]byte{0})
+		case importKeyPinned:
+			h.Write([]byte("module:" + key))
+			h.Write([]byte{0})
+		case importKeyAPI:
+			imported := pkg.typeImports[path]
+			if imported == nil {
+				continue
+			}
+			h.Write([]byte(c.importedAPIDigest(imported)))
+			h.Write([]byte{0})
 		}
-		h.Write([]byte(c.importedAPIDigest(imported)))
-		h.Write([]byte{0})
 	}
 	h.Write([]byte(pkg.dependencyFacts))
 	return fmt.Sprintf("%x", h.Sum(nil))
@@ -323,6 +305,7 @@ func (c *packageCache) importedAPIDigest(imported *types.Package) string {
 	if cached, ok := c.apiDigests.Load(imported); ok {
 		return cached.(string)
 	}
+	c.apiCount.Add(1)
 	h := sha256.New()
 	names := append([]string(nil), imported.Scope().Names()...)
 	sort.Strings(names)

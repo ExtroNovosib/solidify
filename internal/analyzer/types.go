@@ -303,6 +303,10 @@ type Config struct {
 	MinImportClusterMethods int
 	DisabledChecks          []CheckID
 
+	// SRPOrchestratorSuffixes lists type-name suffixes (for example Handler)
+	// that mark intentional orchestrators exempt from low-cohesion findings.
+	SRPOrchestratorSuffixes []string
+
 	// OCP
 	MaxTypeSwitchCases             int // flag type switches / long if-else type-assertion chains
 	OCPMinDispatchSites            int
@@ -330,6 +334,10 @@ type Config struct {
 	ISPMinMethods        int // minimum interface method count for usage-ratio and stub checks
 	ISPUsageRatioPercent int // flag when a client uses fewer than this percent of interface methods
 
+	// ISPWiringAggregateSuffixes lists type-name suffixes (for example Deps)
+	// of dependency bundles exempt from unused-dependency findings.
+	ISPWiringAggregateSuffixes []string
+
 	// DIPAllowDependencies lists concrete type names intentionally permitted
 	// at composition boundaries (for example a database driver).
 	DIPAllowDependencies []string
@@ -346,6 +354,19 @@ type Config struct {
 	// DIPTransportTypes lists fully-qualified transport types that must not
 	// appear in logic-package signatures (for example net/http.Request).
 	DIPTransportTypes []string
+
+	// DIPDomainPackages lists package-path patterns whose behaviorless
+	// structs are passive domain data. When empty, a package named domain (or
+	// whose path ends in /domain) qualifies.
+	DIPDomainPackages []string
+
+	// DIPDataBagSuffixes lists type-name suffixes (for example Config) of
+	// passive data bags that are not concrete behavior dependencies.
+	DIPDataBagSuffixes []string
+
+	// DIPDetailImports lists import paths that logic packages must never
+	// import, in addition to configured implementation packages.
+	DIPDetailImports []string
 
 	// DIP
 	// no threshold needed: DIP checks whether a struct field / constructor
@@ -392,5 +413,9 @@ func DefaultConfig() Config {
 		ISPMinMethods:                  3,
 		ISPUsageRatioPercent:           50,
 		DIPCompositionRootFields:       5,
+		SRPOrchestratorSuffixes:        []string{"Handler"},
+		ISPWiringAggregateSuffixes:     []string{"Bundle", "Deps", "Dependencies", "Stores"},
+		DIPDataBagSuffixes:             []string{"Config"},
+		DIPDetailImports:               append([]string(nil), dipBuiltinDetailImports...),
 	}
 }

@@ -20,7 +20,8 @@ type SRPCheckInput struct {
 // CheckSRPWithTypes combines the always-available syntax checks with the
 // package-wide metrics that need a complete type graph.  A syntax-only run
 // deliberately emits advisory findings but never guesses at strict cohesion
-// or god-type violations.
+// or god-type violations. SOLID-S/large-type applies the same multi-signal
+// profile rule in both modes, so its findings and fingerprints agree.
 func CheckSRPWithTypes(in SRPCheckInput) []Issue {
 	return checkSRPWithTypes(in)
 }
@@ -35,11 +36,13 @@ func checkSRPWithTypes(in SRPCheckInput) []Issue {
 		issues = append(issues, filterSelectedIssues(typedParameterIssues(in.Fset, in.Files, in.Info, in.Config, in.PkgFiles), in.Config)...)
 	}
 	profileChecks := checkEnabled(in.Config, CheckSRPLargeType) || checkEnabled(in.Config, CheckSRPGodType) || checkEnabled(in.Config, CheckSRPHighFanOutType) || checkEnabled(in.Config, CheckSRPMixedImportClusters) || checkEnabled(in.Config, CheckSRPLowCohesionType)
-	if !profileChecks || !in.TypeComplete || in.Info == nil || in.Pkg == nil {
+	if !profileChecks {
 		return issues
 	}
+	if !in.TypeComplete || in.Info == nil || in.Pkg == nil {
+		return append(issues, syntaxLargeTypeIssues(in)...)
+	}
 	profiles := buildSRPTypeProfiles(in.Fset, in.Files, in.Info, in.Pkg, in.PkgFiles)
-	issues = removeIssuesByCheck(issues, CheckSRPLargeType)
 	for _, profile := range profiles {
 		if checkEnabled(in.Config, CheckSRPLargeType) {
 			if large := srpProfileLargeTypeIssue(profile, in.Fset, in.Config, in.TypeComplete); large != nil {
@@ -71,6 +74,22 @@ func checkSRPWithTypes(in SRPCheckInput) []Issue {
 			if low := srpProfileLowCohesionIssue(profile, in.Fset, in.Config); low != nil {
 				issues = append(issues, *low)
 			}
+		}
+	}
+	return issues
+}
+
+// syntaxLargeTypeIssues evaluates the typed large-type rule on profiles built
+// from syntax alone. Every size signal is syntactic; only the TCC exemption
+// needs resolved selections and is therefore not applied.
+func syntaxLargeTypeIssues(in SRPCheckInput) []Issue {
+	if !checkEnabled(in.Config, CheckSRPLargeType) {
+		return nil
+	}
+	var issues []Issue
+	for _, profile := range buildSRPTypeProfiles(in.Fset, in.Files, nil, nil, in.PkgFiles) {
+		if large := srpProfileLargeTypeIssue(profile, in.Fset, in.Config, false); large != nil {
+			issues = append(issues, *large)
 		}
 	}
 	return issues

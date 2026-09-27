@@ -154,7 +154,7 @@ func passiveTestDataField(env dipFieldEnv, field *ast.Field) bool {
 		return false
 	}
 	fieldType := env.info.TypeOf(field.Type)
-	if !isDomainStructType(fieldType) && !isSerializedTestDataType(fieldType) {
+	if !isDomainStructType(fieldType, env.cfg) && !isSerializedTestDataType(fieldType) {
 		return false
 	}
 	fieldObject, ok := env.info.Defs[field.Names[0]].(*types.Var)
@@ -355,12 +355,12 @@ func countDIPRelevantFields(env dipFieldEnv, st *ast.StructType) int {
 func concreteFieldDependency(env dipFieldEnv, field *ast.Field) (dep string, ok bool) {
 	if env.info != nil {
 		fieldType := env.info.TypeOf(field.Type)
-		if isStdlibConcreteType(fieldType) || isPassiveDomainDataType(fieldType) {
+		if isStdlibConcreteType(fieldType) || isPassiveDomainDataType(fieldType, env.cfg) {
 			return "", false
 		}
 	}
 	dep, isPtr := pointerToIdent(field.Type)
-	if dep != "" && (isSamePackageLocalStruct(env.kind, dep) || isConfigDataBagType(dep)) {
+	if dep != "" && (isSamePackageLocalStruct(env.kind, dep) || isConfigDataBagType(dep, env.cfg)) {
 		return "", false
 	}
 	if dep == "" && (env.info == nil || !isConcreteType(env.info.TypeOf(field.Type))) {
@@ -370,7 +370,7 @@ func concreteFieldDependency(env dipFieldEnv, field *ast.Field) (dep string, ok 
 		dep = typeString(env.info.TypeOf(field.Type))
 		_, isPtr = field.Type.(*ast.StarExpr)
 	}
-	if isSamePackageLocalStruct(env.kind, dep) || isConfigDataBagType(dep) {
+	if isSamePackageLocalStruct(env.kind, dep) || isConfigDataBagType(dep, env.cfg) {
 		return "", false
 	}
 	if env.kind[dep] != localStructKind {
@@ -408,14 +408,14 @@ func constructorConcreteIssues(fset *token.FileSet, files []*ast.File, info *typ
 					if !isConcreteType(fieldType) {
 						continue
 					}
-					if isStdlibConcreteType(fieldType) || isPassiveDomainDataType(fieldType) {
+					if isStdlibConcreteType(fieldType) || isPassiveDomainDataType(fieldType, cfg) {
 						continue
 					}
 					if dep == "" {
 						dep = typeString(fieldType)
 						_, ptr = field.Type.(*ast.StarExpr)
 					}
-					if isSamePackageLocalStruct(kind, dep) || isConfigDataBagType(dep) {
+					if isSamePackageLocalStruct(kind, dep) || isConfigDataBagType(dep, cfg) {
 						continue
 					}
 					if !ptr || allowedDependency(dep, cfg) {
@@ -456,20 +456,26 @@ func allowedDependency(dep string, cfg Config) bool {
 // isPassiveDomainDataType identifies domain structs that carry state but expose
 // no behavior. Depending on such values directly is idiomatic Go data flow, not
 // a dependency on replaceable behavior.
-func isPassiveDomainDataType(t types.Type) bool {
+func isPassiveDomainDataType(t types.Type, cfg Config) bool {
 	named, ok := namedConcreteStructType(t)
-	if !ok || !isDomainStructType(t) {
+	if !ok || !isDomainStructType(t, cfg) {
 		return false
 	}
 	return types.NewMethodSet(named).Len() == 0 && types.NewMethodSet(types.NewPointer(named)).Len() == 0
 }
 
-func isDomainStructType(t types.Type) bool {
+// isDomainStructType reports whether t is a struct from a domain package:
+// one matching dip.domain_packages, or, when that list is empty, a package
+// named domain or whose import path ends in /domain.
+func isDomainStructType(t types.Type, cfg Config) bool {
 	named, ok := namedConcreteStructType(t)
 	if !ok || named.Obj() == nil || named.Obj().Pkg() == nil {
 		return false
 	}
 	pkg := named.Obj().Pkg()
+	if len(cfg.DIPDomainPackages) > 0 {
+		return matchesAnyPackagePattern(pkg.Path(), cfg.DIPDomainPackages)
+	}
 	pkgPath := strings.TrimSuffix(pkg.Path(), "/")
 	pathBase := pkgPath
 	if slash := strings.LastIndex(pathBase, "/"); slash >= 0 {

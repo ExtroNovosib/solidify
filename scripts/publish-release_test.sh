@@ -20,10 +20,24 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+rollover="$script_dir/rollover-changelog.sh"
+empty_changelog="$work_dir/empty-CHANGELOG.md"
+printf '# Changelog\n\n## Unreleased\n\n## v0.1.0\n\n- First release.\n' >"$empty_changelog"
+if "$rollover" v0.2.0 "$empty_changelog" >/dev/null 2>&1; then
+	echo "rollover accepted an empty Unreleased section" >&2
+	exit 1
+fi
+grep -Fxq '## Unreleased' "$empty_changelog"
+if grep -Fxq '## v0.2.0' "$empty_changelog"; then
+	echo "failed rollover modified the changelog" >&2
+	exit 1
+fi
+
 git init --bare --quiet "$work_dir/remote.git"
 mkdir -p "$work_dir/repo/scripts"
 cp "$publisher" "$work_dir/repo/scripts/publish-release.sh"
-chmod +x "$work_dir/repo/scripts/publish-release.sh"
+cp "$rollover" "$work_dir/repo/scripts/rollover-changelog.sh"
+chmod +x "$work_dir/repo/scripts/publish-release.sh" "$work_dir/repo/scripts/rollover-changelog.sh"
 mkdir -p "$work_dir/bin"
 
 cat >"$work_dir/bin/go" <<'EOF'
@@ -51,6 +65,18 @@ go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.1.0
 make publish VERSION=v0.1.0
 EOF
 
+cat >"$work_dir/repo/CHANGELOG.md" <<'EOF'
+# Changelog
+
+## Unreleased
+
+- Add the release rollover.
+
+## v0.1.0
+
+- First release.
+EOF
+
 cat >"$work_dir/repo/Makefile" <<'EOF'
 .PHONY: check release-snapshot release-consumer-smoke
 
@@ -71,15 +97,29 @@ EOF
 	git config user.name "solidlint release test"
 	git config user.email "release-test@solidlint.invalid"
 	git remote add origin "$work_dir/remote.git"
-	git add README.md scripts/publish-release.sh
+	git add README.md CHANGELOG.md scripts/publish-release.sh scripts/rollover-changelog.sh
 	git commit --quiet -m "initial"
 	git push --quiet -u origin main
 	echo "release content" >release.txt
+	dry_run=$(PATH="$work_dir/bin:$PATH" ./scripts/publish-release.sh --dry-run v0.2.0)
+	printf '%s\n' "$dry_run" | grep -Fq 'Would move CHANGELOG.md Unreleased entries under v0.2.0'
+	grep -Fq -- '- Add the release rollover.' CHANGELOG.md
+	if grep -Fxq '## v0.2.0' CHANGELOG.md; then
+		echo "dry run modified CHANGELOG.md" >&2
+		exit 1
+	fi
 	PATH="$work_dir/bin:$PATH" ./scripts/publish-release.sh --yes v0.2.0 >/dev/null
 	[ -x .cache/release-tools/syft ]
 	grep -Fq 'cmd/solidlint@v0.2.0' README.md
 	grep -Fq 'version: v0.2.0' README.md
 	grep -Fq 'VERSION=v0.2.0' README.md
+	expected_changelog=$(printf '# Changelog\n\n## Unreleased\n\n## v0.2.0\n\n- Add the release rollover.\n\n## v0.1.0\n\n- First release.')
+	[ "$(cat CHANGELOG.md)" = "$expected_changelog" ] || {
+		echo "unexpected CHANGELOG.md after release:" >&2
+		cat CHANGELOG.md >&2
+		exit 1
+	}
+	git show --name-only --format= HEAD | grep -Fxq CHANGELOG.md
 	[ -z "$(git status --porcelain)" ]
 	[ "$(git log -1 --format=%s)" = "Release solidlint v0.2.0" ]
 )

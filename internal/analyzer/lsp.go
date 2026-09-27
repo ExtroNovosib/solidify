@@ -10,13 +10,6 @@ import (
 	"strings"
 )
 
-// CheckLSP is retained for callers that only have syntax. LSP checks rely on
-// resolved types and deliberately make no claim when type information is not
-// available.
-func CheckLSP(fset *token.FileSet, files []*ast.File, cfg Config) []Issue {
-	return nil
-}
-
 // CheckLSPWithTypes performs package-local, contract-backed checks. It does
 // not duplicate unsupported-operation detection: that remains an ISP concern
 // because it identifies interfaces that force a type to implement an operation

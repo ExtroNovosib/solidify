@@ -24,7 +24,7 @@ func emitOCPConcreteParameters(pkgs []*packageFiles, cfg Config) []Issue {
 				}
 				for _, field := range fn.Type.Params.List {
 					paramType := pkg.info.TypeOf(field.Type)
-					if !concreteTypeCandidate(paramType) || allowedDependency(canonicalTypeKey(paramType), cfg) {
+					if !concreteTypeCandidate(paramType) || !foreignPointerParameter(paramType, pkg.typePkg) || allowedDependency(canonicalTypeKey(paramType), cfg) {
 						continue
 					}
 					for _, name := range field.Names {
@@ -50,6 +50,22 @@ func emitOCPConcreteParameters(pkgs []*packageFiles, cfg Config) []Issue {
 		}
 	}
 	return issues
+}
+
+// foreignPointerParameter reports whether typ points to a named type declared
+// outside current. Like constructor concrete-dependency findings, a package's
+// own types and by-value copies are its vocabulary rather than an extension
+// seam a caller could substitute.
+func foreignPointerParameter(typ types.Type, current *types.Package) bool {
+	pointer, ok := types.Unalias(typ).(*types.Pointer)
+	if !ok {
+		return false
+	}
+	named, ok := types.Unalias(pointer.Elem()).(*types.Named)
+	if !ok || named.Obj() == nil || named.Obj().Pkg() == nil {
+		return false
+	}
+	return current == nil || named.Obj().Pkg().Path() != current.Path()
 }
 
 func emitOCPFactories(pkgs []*packageFiles, cfg Config) ([]Issue, map[string]bool) {

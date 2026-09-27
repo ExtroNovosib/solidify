@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/ExtroNovosib/solidify/internal/analyzer"
 	"github.com/ExtroNovosib/solidify/internal/report"
@@ -22,17 +24,39 @@ func renderIssues(issues []analyzer.Issue, format string, profile analyzer.Profi
 	case "sarif":
 		return report.EncodeSARIF(os.Stdout, issues, report.SARIFMetadata{ToolName: "solidlint", ToolVersion: build.Version})
 	default:
+		cwd, _ := os.Getwd()
 		for _, issue := range issues {
+			line := formatIssueLine(issue, cwd)
 			metadata, known := analyzer.CheckMetadata(issue.Check)
 			if (profile == analyzer.ProfileAll || profile == analyzer.ProfileCalibration) && known && metadata.Maturity == analyzer.MaturityExperimental {
-				fmt.Println(issue.String(), "[experimental]")
+				fmt.Println(line, "[experimental]")
 			} else {
-				fmt.Println(issue.String())
+				fmt.Println(line)
 			}
 		}
 		fmt.Printf("\n%d issue(s) found\n", len(issues))
 		return nil
 	}
+}
+
+// formatIssueLine renders a text finding with its path relative to the
+// working directory when the file lies under it, so editors and terminals can
+// open it directly. Other paths are printed unchanged; JSON and SARIF keep
+// their portable module-relative paths.
+func formatIssueLine(issue analyzer.Issue, cwd string) string {
+	issue.Pos.Filename = workingDirectoryPath(issue.Pos.Filename, cwd)
+	return issue.String()
+}
+
+func workingDirectoryPath(filename, cwd string) string {
+	if cwd == "" || !filepath.IsAbs(filename) {
+		return filename
+	}
+	relative, err := filepath.Rel(cwd, filename)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return filename
+	}
+	return relative
 }
 
 func renderEffectiveConfig(policy checkPolicy) error {

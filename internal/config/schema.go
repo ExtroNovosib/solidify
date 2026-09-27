@@ -36,7 +36,8 @@ func Validate(path string) error {
 	return err
 }
 
-// SchemaJSON returns the canonical JSON Schema for .solidify.yml.
+// SchemaJSON returns the canonical JSON Schema for .solidlint.yml and
+// .solidify.yml.
 func SchemaJSON() ([]byte, error) {
 	thresholdProperties := map[string]any{}
 	for _, spec := range analyzer.ThresholdSpecs() {
@@ -87,9 +88,11 @@ func schemaProperties(checkIDs []string, thresholds map[string]any) map[string]a
 		"severity":           map[string]any{"type": "object", "additionalProperties": map[string]any{"enum": severityValues}},
 		"allow_dependencies": stringArray(),
 		"fail_level":         map[string]any{"enum": severityValues},
+		"srp":                nestedStringArrays("orchestrator_suffixes"),
 		"ocp":                nestedStringArrays("discriminator_fields", "allow_dispatch_types", "allow_packages"),
+		"isp":                nestedStringArrays("wiring_aggregate_suffixes"),
 		"architecture":       nestedStringArrays("logic_packages", "implementation_packages", "composition_roots"),
-		"dip":                nestedStringArrays("infra_error_packages", "transport_types"),
+		"dip":                nestedStringArrays("infra_error_packages", "transport_types", "domain_packages", "data_bag_suffixes", "detail_imports"),
 	}
 }
 

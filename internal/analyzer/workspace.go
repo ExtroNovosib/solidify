@@ -212,6 +212,7 @@ func packageFilesFromLoaded(selected map[string]*packages.Package, root string, 
 			pkgPath:      pkg.PkgPath,
 			pkgName:      pkg.Name,
 			modulePath:   modulePath(pkg),
+			moduleGoMod:  moduleGoMod(pkg),
 			imports:      sortedImportPaths(pkg.Imports),
 			typeImports:  packageTypeImportsFromLoaded(pkg),
 			analysisRoot: root,
@@ -696,6 +697,13 @@ func workspacePatterns(paths []string) ([]string, error) {
 func modulePath(pkg *packages.Package) string {
 	if pkg != nil && pkg.Module != nil {
 		return pkg.Module.Path
+	}
+	return ""
+}
+
+func moduleGoMod(pkg *packages.Package) string {
+	if pkg != nil && pkg.Module != nil {
+		return pkg.Module.GoMod
 	}
 	return ""
 }

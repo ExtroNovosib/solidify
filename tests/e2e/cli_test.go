@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -113,24 +114,7 @@ func TestAnalysisModesHandleIllTypedSource(t *testing.T) {
 	binary := buildCLI(t, root)
 	fixture := t.TempDir()
 	writeE2EFile(t, filepath.Join(fixture, "go.mod"), "module example.com/illtyped\n\ngo 1.25.0\n")
-	writeE2EFile(t, filepath.Join(fixture, "illtyped.go"), `package illtyped
-
-var _ = missingIdentifier
-
-type Oversized struct{}
-
-func (Oversized) One() {}
-func (Oversized) Two() {}
-func (Oversized) Three() {}
-func (Oversized) Four() {}
-func (Oversized) Five() {}
-func (Oversized) Six() {}
-func (Oversized) Seven() {}
-func (Oversized) Eight() {}
-func (Oversized) Nine() {}
-func (Oversized) Ten() {}
-func (Oversized) Eleven() {}
-`)
+	writeE2EFile(t, filepath.Join(fixture, "illtyped.go"), illTypedOversizedSource())
 
 	for _, mode := range []string{"syntax", "auto"} {
 		t.Run(mode, func(t *testing.T) {
@@ -168,6 +152,40 @@ func (Oversized) Eleven() {}
 	if len(stats.Packages) != 1 || stats.Packages[0].Package != "example.com/illtyped" || stats.Packages[0].TypeComplete {
 		t.Fatalf("auto stats did not disclose incomplete package coverage: %+v", stats.Packages)
 	}
+}
+
+// illTypedOversizedSource declares a type that crosses four independent
+// large-type signals (methods, exported methods, heterogeneous fields, and
+// WMC) in a package that cannot be type-checked.
+func illTypedOversizedSource() string {
+	fieldTypes := []string{"int", "string", "bool", "float64", "[]byte", "map[string]int", "chan int", "error", "rune", "uint", "[]string"}
+	var source strings.Builder
+	source.WriteString("package illtyped\n\nvar _ = missingIdentifier\n\ntype Oversized struct {\n")
+	for index, fieldType := range fieldTypes {
+		fmt.Fprintf(&source, "\tfield%c %s\n", 'A'+index, fieldType)
+	}
+	source.WriteString("}\n")
+	for index := range fieldTypes {
+		fmt.Fprintf(&source, `
+func (o *Oversized) Method%c(value int) int {
+	if value > 1 {
+		value++
+	}
+	if value > 2 {
+		value--
+	}
+	if value > 3 {
+		value *= 2
+	}
+	if value > 4 {
+		value /= 2
+	}
+	_ = o.field%c
+	return value
+}
+`, 'A'+index, 'A'+index)
+	}
+	return source.String()
 }
 
 type processResult struct {

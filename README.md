@@ -3,7 +3,7 @@
 `solidlint` finds explainable SOLID design smells in Go code. It complements
 `golangci-lint`; it does not prove that a program is SOLID.
 
-Version 0.1 requires Go 1.25. The default `stable` profile runs exactly seven
+solidlint requires Go 1.25. The default `stable` profile runs exactly seven
 corpus-backed checks: `SOLID-S/large-type`, `SOLID-S/data-clump`,
 `SOLID-O/type-dispatch`, the three stable `SOLID-I/*` checks, and
 `SOLID-D/concrete-dependency`. Use `-profile=all` for all 29 checks or
@@ -32,7 +32,7 @@ module-wide OCP correlation; all checks remain explicitly heuristic.
 and CI automation so upgrades remain deliberate:
 
 ```sh
-go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.3.0
+go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.4.0
 solidlint -version
 solidlint -fail=false ./...
 ```
@@ -49,7 +49,7 @@ For GitHub Actions, keep installation and enforcement explicit:
 - uses: actions/setup-go@v7
   with:
     go-version: "1.25.x"
-- run: go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.3.0
+- run: go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.4.0
 - run: solidlint ./...
 ```
 
@@ -70,11 +70,13 @@ go build -o solidlint ./cmd/solidlint
 ./solidlint --help
 ./solidlint checks list
 ./solidlint checks explain SOLID-I/fat-interface
-./solidlint config init > .solidify.yml
-./solidlint config validate .solidify.yml
+./solidlint config init > .solidlint.yml
+./solidlint config validate
 ./solidlint stats -format=json ./...
 ./solidlint -analysis=syntax -rules=S,I ./internal/...
 ./solidlint -tests -fail-level=error ./...
+./solidlint -threshold max_interface_methods=6 -threshold min_tcc_percent=40 ./...
+./solidlint -quiet ./...
 ./solidlint -format=json ./... > findings.json
 ./solidlint -format=sarif ./... > findings.sarif
 ```
@@ -110,7 +112,7 @@ logic packages, and transport types in logic signatures.
 | `SOLID-D/transport-leak` | Logic function exposes transport types such as `*http.Request` or `*sql.Tx` in parameters or results |
 
 All `SOLID-D/*` checks are disable-able via `disabled_checks` and
-`//solidify:ignore SOLID-D/<check-id> reason`.
+`//solidlint:ignore SOLID-D/<check-id> reason`.
 
 LSP checks are deliberately narrow and require type information. They flag an
 `io.Reader`-compatible `Read` method that reconstructs or wraps `io.EOF`
@@ -132,11 +134,18 @@ current directory, as they do for `go list`.
 causes exit status 1 by default; pass `-fail=false` for report-only jobs.
 `-fail-level=note|warning|error` selects the minimum severity that fails
 (the default is `warning`). Pass `-tests` to include `_test.go` files, and use
-`-version` to print the build version. The CLI also supports the thresholds
-`-max-methods`, `-max-func-lines`, `-max-params`, `-max-switch-cases`, and
-`-max-interface-methods`, `-isp-min-methods`, and `-isp-usage-ratio-percent`.
-Defaults are `max-params=8` and `max-interface-methods=8` so cohesive Go
-workflow helpers and moderately sized ports stay quiet. For discovery on large
+`-version` to print the build version. `-threshold key=value` sets any
+threshold from the configuration file's `thresholds` section and may be
+repeated; it overrides the configuration file, and naming the same key through
+a dedicated flag as well is a usage error (exit 2). The dedicated flags
+`-max-methods`, `-max-func-lines`, `-max-params`, `-max-switch-cases`,
+`-max-interface-methods`, `-isp-min-methods`, and `-isp-usage-ratio-percent`
+remain available. Defaults are `max-params=8` and `max-interface-methods=8` so
+cohesive Go workflow helpers and moderately sized ports stay quiet.
+When a configuration file is discovered from the scan targets, solidlint prints
+`solidlint: using config <path> (discovered from scan target); profile=<profile> checks=<n>`
+to stderr; `-quiet` suppresses that informational line but never warnings or
+errors. For discovery on large
 packages, prefer `-rules S,I` and `-fail=false`; use baselines before turning
 `-fail` on mega-packages.
 
@@ -147,7 +156,7 @@ Local development has explicit short, full, and release tiers:
 ```sh
 make check-fast
 make check
-SOLIDLINT_VERSION=v0.3.0 make check-release
+SOLIDLINT_VERSION=v0.4.0 make check-release
 ```
 
 `make check-fast` runs formatting, `go vet`, unit tests, integration tests, and
@@ -162,16 +171,18 @@ To prepare and publish a release end to end, run the guarded publisher with the
 next immutable semantic version:
 
 ```sh
-make publish VERSION=v0.3.0
+make publish VERSION=v0.4.0
 ```
 
 The script verifies the branch and remote history, updates README release pins,
-shows the complete change set, and asks once before proceeding. It runs the full
+moves the `## Unreleased` entries of `CHANGELOG.md` under a new `## VERSION`
+heading (it refuses to publish without release notes), shows the complete
+change set, and asks once before proceeding. It runs the full
 local gate and a GoReleaser snapshot, stages and commits all current changes,
 pushes `main`, validates that exact public commit from a clean external consumer,
 then creates and pushes the annotated tag. The tag starts the GitHub Release
 workflow. Preview every operation without modifying anything with
-`make publish VERSION=v0.3.0 PUBLISH_FLAGS=--dry-run`. Use
+`make publish VERSION=v0.4.0 PUBLISH_FLAGS=--dry-run`. Use
 `PUBLISH_FLAGS="--yes --skip-checks"` only when automating a release whose local
 and external-consumer qualification already passed for the exact content.
 When GoReleaser is not installed globally and `GORELEASER` is not set, the
@@ -196,8 +207,9 @@ receivers, only those identities gain a `receiver=` qualifier, or a
 source-order `occurrence=` qualifier when no receiver tells them apart.
 Repository paths in JSON and SARIF are
 relative to the containing module root; external files are kept unambiguous.
-Text output may show absolute filesystem paths for local readability; JSON and
-SARIF default to portable relative paths. External findings preserve an
+Text output prints paths relative to the working directory for files under it
+and leaves other paths absolute; JSON and SARIF always use portable
+module-relative paths, independent of the working directory. External findings preserve an
 unambiguous URI or path and may not map to repository annotations in code
 review UIs.
 The output schema is checked in at `schemas/solidlint-result-v3.schema.json`.
@@ -206,8 +218,13 @@ SARIF output is SARIF 2.1.0 and includes rule metadata, locations, GitHub's
 
 ### Configuration, suppressions, and baselines
 
-`solidlint` discovers `.solidify.yml` upwards from each scanned target, or uses
-`-config path`. Targets that resolve to different configuration scopes must be
+`solidlint` discovers `.solidlint.yml` (preferred) or `.solidify.yml` upwards
+from each scanned target, or uses `-config path`. Both names are fully
+supported; one directory holding both is a configuration error (exit 2).
+`solidlint config validate` without a path checks `.solidlint.yml` in the
+current directory, or `.solidify.yml` when only that exists. Suppression
+directives likewise accept the `solidlint:` prefix alongside the original
+`solidify:` prefix (see below). Targets that resolve to different configuration scopes must be
 scanned separately or with an explicit `-config`; policy never silently depends
 on the shell's current directory. CLI thresholds, rules, and `fail-level` take
 precedence.
@@ -238,10 +255,14 @@ severity:
   SOLID-I/fat-interface: error
   SOLID-I/usage-ratio: warning
   SOLID-I/stub-implementation: warning
+srp:
+  orchestrator_suffixes: [Handler]
 ocp:
   discriminator_fields: [Kind, Type, Status, Mode, Variant]
   allow_dispatch_types: []
   allow_packages: [github.com/ExtroNovosib/solidify/internal/parser/**]
+isp:
+  wiring_aggregate_suffixes: [Bundle, Deps, Dependencies, Stores]
 architecture:
   logic_packages: [github.com/ExtroNovosib/solidify/internal/service/**, github.com/ExtroNovosib/solidify/internal/usecase/**]
   implementation_packages: [github.com/ExtroNovosib/solidify/internal/providers/**, github.com/ExtroNovosib/solidify/internal/adapters/**]
@@ -249,13 +270,31 @@ architecture:
 dip:
   infra_error_packages: [database/sql]
   transport_types: [net/http.Request, net/http.ResponseWriter, database/sql.Tx]
+  domain_packages: [github.com/ExtroNovosib/solidify/internal/domain/**]
+  data_bag_suffixes: [Config]
+  detail_imports: [database/sql, database/sql/driver, net/http, os/exec]
 ```
 
-Suppress one finding with a specific rule and explanation, on the finding line,
+The naming-convention lists `srp.orchestrator_suffixes`,
+`isp.wiring_aggregate_suffixes`, `dip.domain_packages`,
+`dip.data_bag_suffixes`, and `dip.detail_imports` replace built-in defaults
+only when set; the example shows those defaults. When `dip.domain_packages` is
+empty, a package named `domain` (or whose import path ends in `/domain`) holds
+passive domain data.
+
+Suppress one finding with a specific ID and explanation, on the finding line,
 the preceding line, or elsewhere in the owning declaration header:
-`//solidify:ignore SOLID-I/fat-interface legacy RPC API`. A directive in a
-multi-line function signature covers all matching parameter findings in that
-signature, but not findings from the function body.
+`//solidlint:ignore SOLID-I/fat-interface legacy RPC API`. The ID is a concrete
+check ID or a rule family such as `SOLID-I`; a family matches every check of
+that rule. A directive in a multi-line function signature covers all matching
+parameter findings in that signature, but not findings from the function body.
+`//solidlint:ignore-file SOLID-S/large-type reason` anywhere in a file covers
+every matching finding whose primary position is in that file; it never
+suppresses a finding in another file through a related location. The original
+`//solidify:ignore` and `//solidify:ignore-file` spellings remain fully
+supported. Every directive needs a known ID and a non-empty reason; anything
+else is a configuration error (exit 2). Prefer the narrowest form: family and
+file-level directives hide more findings, including ones added later.
 
 Exclude patterns use documented globs. `**` matches across path segments;
 `generated/**` excludes any `generated` directory prefix. Malformed patterns
@@ -307,15 +346,27 @@ The default package and program-group cache is stored in the platform user
 cache, namespaced by the analysis root. Use `-cache-dir` to relocate it or
 `-cache=false` to disable it. `-cache-debug` prints cache diagnostics to stderr.
 Entries are keyed by the exact solidlint build, so development builds never
-reuse each other's results.
+reuse each other's results; the build digest is remembered in the cache
+directory and recomputed only when the executable's path, size, or modification
+time changes. The key covers every policy setting that can change findings
+(profile, checks, thresholds, analysis mode, exclusions, and every `srp`,
+`ocp`, `isp`, `architecture`, and `dip` list) but not the cache location,
+diagnostics, or version label. Each package entry also covers its own sources
+and, per import: the exported API of packages loaded in the same run or in the
+same module; the active Go release for standard-library packages; and the
+importing module's `go.mod` and `go.sum` for other modules. When `go.mod`
+replaces a module with a local directory, a `go.work` file governs the load, or
+the module vendors its dependencies, those imports fall back to the exported-API
+digest because their source can change without a version change.
+`-cache-debug` reports how many API digests a run computed as `api_digests`.
 Syntax analysis does not request type, dependency, or export-file metadata.
 For typed analysis, only packages that lose excluded files, plus their
 importers, are re-type-checked; every other package reuses the loader snapshot
 unchanged.
 `solidlint --help` lists the available commands and common invocations.
 `solidlint checks explain <id>` reports the check's documentation link,
-configuration keys, remediation guidance, a compact before/after example, and
-the kind of legitimate exception that warrants review rather than a blind
+configuration keys, remediation guidance, a compact before/after example
+specific to that check, and the kind of legitimate exception that warrants review rather than a blind
 source edit. `solidlint stats -format=json` returns structural execution
 evidence—selected, executed, skipped, cache-hit, cache-miss runner groups,
 per-package type completeness, and one reasoned coverage status for every
@@ -359,8 +410,8 @@ DIP field and constructor findings are suppressed in packages matching
 zero-config composition roots that wire at least five concrete collaborators
 (`dip_composition_root_fields`, default 5) and on thin bridge adapters with at
 most two concrete struct dependencies and three relevant fields. Same-package
-concrete types, `*Config` data bags, and behaviorless structs from domain
-packages are ignored; cross-package concrete behavior dependencies still flag.
+concrete types, `*Config` data bags (`dip.data_bag_suffixes`), and behaviorless
+structs from domain packages (`dip.domain_packages`) are ignored; cross-package concrete behavior dependencies still flag.
 In test fakes, domain entities and serialized DTOs kept only as returned or
 asserted state are likewise ignored unless their methods are invoked or they
 are passed into a constructor as collaborators.
@@ -375,9 +426,9 @@ shape. By default it also requires four independent size signals
 the method limit and more than the field limit. Serialized data carriers
 (mostly `json`, `yaml`, `toml`, `xml`, or `mapstructure` fields with no
 behavior or mostly accessors) are excluded from low-cohesion and field-level
-DIP findings. Types whose names end in `Handler` are also excluded from
-`low-cohesion-type` because command and HTTP handlers are usually intentional
-orchestrators. `http.ResponseWriter` and `context.Context` are excluded from
+DIP findings. Types whose names end in `Handler` (configurable with
+`srp.orchestrator_suffixes`) are also excluded from `low-cohesion-type` because
+command and HTTP handlers are usually intentional orchestrators. `http.ResponseWriter` and `context.Context` are excluded from
 `usage-ratio` because callers typically touch only a small part of the stdlib
 surface. `usage-ratio` examines exported function/method parameters and
 interface-typed fields on exported consumers, aggregating field use across
@@ -405,7 +456,7 @@ destination: ./.bin
 plugins:
   - module: github.com/ExtroNovosib/solidify
     import: github.com/ExtroNovosib/solidify/plugin/solidlint
-    version: v0.3.0
+    version: v0.4.0
 ```
 
 Enable the module plugin in `.golangci.yml`:
@@ -470,7 +521,10 @@ The plugins expose exactly the nine SRP checks, `SOLID-L/non-exact-eof`, all
 five ISP checks, and `SOLID-D/concrete-dependency`. Every OCP check,
 `SOLID-L/nil-embedded-interface`, and the other five DIP checks remain CLI-only
 program correlations. Plugins do not load baselines or CLI architecture
-configuration. Use the CLI for those policies and for whole-program checks.
+configuration, and they always use the default naming conventions
+(`srp.orchestrator_suffixes`, `isp.wiring_aggregate_suffixes`, and the `dip`
+domain, data-bag, and detail-import lists). Use the CLI for those policies and
+for whole-program checks.
 
 ## Current limits
 
@@ -481,7 +535,9 @@ package-wide WMC, TCC, LCOM4, fan-out, and ATFD metrics; strict `god-type` and
 external import paths and complements LCOM4; it does not replace semantic
 review of mixed concerns inside one package. Syntax-only runs retain advisory
 checks such as `complex-function`, `mixed-input-surface`, `data-clump`, and
-`flag-argument`.
+`flag-argument`. `SOLID-S/large-type` applies the same four-signal rule with or
+without types, so its findings keep one fingerprint across modes; only the
+`min_tcc_percent` cohesion skip needs type information.
 
 OCP’s module-wide checks use canonical `go/types` identities and related
 locations. In syntax mode, only local AST signals such as large type switches

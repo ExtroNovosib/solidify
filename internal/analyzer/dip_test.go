@@ -427,3 +427,40 @@ func (f *fakeRepository) Display() string    { return f.collaborator.Display() }
 		t.Fatalf("unexpected behavioral test dependency: %+v", issues[0])
 	}
 }
+
+func TestCheckDIPWithTypes_ConfiguredDomainPackages(t *testing.T) {
+	dir := t.TempDir()
+	initTempModule(t, dir)
+	modelDir := filepath.Join(dir, "model")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "types.go"), []byte(`package model
+
+type Revision struct { ID string }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "service.go"), []byte(`package p
+
+import "tempmod/model"
+
+type prepared struct {
+	revision *model.Revision
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs := loadWorkspaceDir(t, dir, false, "types")
+	pkg := findPackageP(t, pkgs)
+	unconfigured := issuesWithCheck(CheckDIPWithTypes(pkg.fset, pkg.files, pkg.info, DefaultConfig(), pkg), CheckDIPConcreteDependency)
+	if len(unconfigured) != 1 || unconfigured[0].Evidence != "concrete-dependency:type=prepared;field=revision;dependency=tempmod/model.Revision" {
+		t.Fatalf("model package without dip.domain_packages = %v, want one concrete dependency", unconfigured)
+	}
+	cfg := DefaultConfig()
+	cfg.DIPDomainPackages = []string{"tempmod/model"}
+	if configured := issuesWithCheck(CheckDIPWithTypes(pkg.fset, pkg.files, pkg.info, cfg, pkg), CheckDIPConcreteDependency); len(configured) != 0 {
+		t.Fatalf("model package listed in dip.domain_packages still reported: %v", configured)
+	}
+}
