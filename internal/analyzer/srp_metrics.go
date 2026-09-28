@@ -28,6 +28,9 @@ func CheckSRPWithTypes(in SRPCheckInput) []Issue {
 
 func checkSRPWithTypes(in SRPCheckInput) []Issue {
 	issues := checkSRPSyntax(in.Fset, in.Files, in.Config, in.PkgFiles)
+	if checkEnabled(in.Config, CheckSRPTransportWorkflow) {
+		issues = append(issues, checkTransportWorkflows(in.Fset, in.Files, in.Info, in.Config, in.PkgFiles)...)
+	}
 	parameterChecks := checkEnabled(in.Config, CheckSRPMixedInputSurface) || checkEnabled(in.Config, CheckSRPDataClump) || checkEnabled(in.Config, CheckSRPFlagArgument)
 	if parameterChecks && in.TypeComplete && in.Info != nil {
 		issues = removeIssuesByCheck(issues, CheckSRPMixedInputSurface)
@@ -44,6 +47,9 @@ func checkSRPWithTypes(in SRPCheckInput) []Issue {
 	}
 	profiles := buildSRPTypeProfiles(in.Fset, in.Files, in.Info, in.Pkg, in.PkgFiles)
 	for _, profile := range profiles {
+		if pureDelegatingProfile(profile, in.Info) {
+			continue
+		}
 		if checkEnabled(in.Config, CheckSRPLargeType) {
 			if large := srpProfileLargeTypeIssue(profile, in.Fset, in.Config, in.TypeComplete); large != nil {
 				issues = append(issues, *large)
@@ -119,4 +125,77 @@ func buildSRPTypeProfiles(fset *token.FileSet, files []*ast.File, info *types.In
 	profiles := collectSRPStructProfiles(files, info, pkg, pkgFiles)
 	attachSRPMethodsToProfiles(profiles, files, pkgFiles)
 	return finalizeSRPTypeProfiles(profiles, fset, files, info, pkg)
+}
+
+func pureDelegatingProfile(profile *srpTypeProfile, info *types.Info) bool {
+	if len(profile.methods) == 0 {
+		return false
+	}
+	for _, method := range profile.methods {
+		if pureForwardingField(method, info) == "" && !guardedForwardingMethod(method, info) {
+			return false
+		}
+	}
+	return true
+}
+
+func guardedForwardingMethod(fn *ast.FuncDecl, info *types.Info) bool {
+	if fn.Body == nil || len(fn.Body.List) < 2 {
+		return false
+	}
+	for _, statement := range fn.Body.List[:len(fn.Body.List)-1] {
+		guard, ok := statement.(*ast.IfStmt)
+		if !ok || guard.Init != nil || guard.Else != nil {
+			return false
+		}
+		safe := nilAvailabilityCondition(guard.Cond)
+		if !safe {
+			return false
+		}
+		for _, body := range guard.Body.List {
+			ret, ok := body.(*ast.ReturnStmt)
+			if !ok {
+				return false
+			}
+			for _, expr := range ret.Results {
+				ast.Inspect(expr, func(n ast.Node) bool {
+					if _, ok := n.(*ast.CallExpr); ok {
+						safe = false
+					}
+					return true
+				})
+			}
+		}
+		if !safe {
+			return false
+		}
+	}
+	clone := *fn
+	clone.Body = &ast.BlockStmt{List: fn.Body.List[len(fn.Body.List)-1:]}
+	return pureForwardingField(&clone, info) != ""
+}
+
+func nilAvailabilityCondition(expr ast.Expr) bool {
+	binary, ok := expr.(*ast.BinaryExpr)
+	if !ok {
+		return false
+	}
+	if binary.Op == token.LOR || binary.Op == token.LAND {
+		return nilAvailabilityCondition(binary.X) && nilAvailabilityCondition(binary.Y)
+	}
+	if binary.Op != token.EQL && binary.Op != token.NEQ {
+		return false
+	}
+	if !isNilExpression(binary.X) && !isNilExpression(binary.Y) {
+		return false
+	}
+	other := binary.X
+	if isNilExpression(other) {
+		other = binary.Y
+	}
+	switch other.(type) {
+	case *ast.Ident, *ast.SelectorExpr:
+		return true
+	}
+	return false
 }

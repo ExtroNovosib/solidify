@@ -25,3 +25,5 @@ The analyzer corpus contains the executable positive, boundary, and clean exampl
 ## Limitations and remediation
 
 This is an explainable heuristic, not proof of a design defect. Review generated code, DTOs, composition roots, adapters, thin wrappers, and framework contracts before refactoring. Prefer a behavior-preserving extraction or narrower consumer-owned abstraction. Solidlint does not advertise generic suppression insertion as an automatic or safe source fix. For intentional debt, add a reason-bearing `//solidify:ignore SOLID-S/low-cohesion-type ...` manually or use an annotated baseline v5 entry with review context. Configure canonical snake_case thresholds where the check exposes them, and use exact IDs in `disabled_checks`, severity overrides, suppressions, and baselines.
+
+A receiver whose methods only forward unchanged arguments to collaborators, optionally guarding unavailable/nil collaborators, is a delegated facade. It is exempt from type size/cohesion smells based solely on that delegation. Authorization, role checks, state transitions and other owned policy remain eligible and retain their dependency/method groups.

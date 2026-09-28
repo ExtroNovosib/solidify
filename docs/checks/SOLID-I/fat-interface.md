@@ -33,3 +33,5 @@ Evidence is `fat-interface:interface=WidePort;methods=9;max=8`. Configure `max_i
 ## Limitations and remediation
 
 Framework façades, generated APIs, and explicit aggregation ports may be intentionally broad. Review consumers and implementers before splitting the interface into role-specific contracts. Solidlint does not treat accepting debt as an automatic source fix. Use a reason-bearing suppression or baseline v5 annotation after review. See the [stable v0.2 evaluation](../../evaluations/stable-v0.2.md).
+
+A locally declared interface composed from multiple embedded roles is exempt from the count-only warning when a receiver consumes its complete method set. Partial consumers remain eligible; a large declaration alone does not establish segregation debt for a cohesive, fully consuming service. The typed exemption needs concrete receiver-field method use; syntax mode retains its documented conservative count rule.

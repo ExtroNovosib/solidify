@@ -61,6 +61,12 @@ func checkISPConsumerRoles(
 						ratioPercent := 100 * len(used) / iface.NumMethods()
 						unused := unusedInterfaceMethods(iface, usage.methods)
 						capability := detectCapabilityMismatch(iface.NumMethods(), used, unused)
+						for _, method := range unused {
+							if containsString(cfg.ISPExecutionMethods, method) {
+								capability = capabilityMismatch{detected: true, direction: "limited", opposite: "execution"}
+								break
+							}
+						}
 						numericCandidate := iface.NumMethods() >= 4 && ratioPercent < cfg.ISPUsageRatioPercent
 						if !numericCandidate && !capability.detected {
 							continue
@@ -109,7 +115,7 @@ func consumerRoleIssue(
 	)
 	if capability.detected {
 		message = fmt.Sprintf(
-			"field %s.%s is a %s consumer of interface %s but also receives %s capabilities: consider a narrower role with just %s",
+			"field %s.%s uses a %s method set from interface %s but also receives unused %s capabilities: consider a narrower role with just %s",
 			owner, field, capability.direction, interfaceName, capability.opposite, strings.Join(used, ", "),
 		)
 	}
@@ -142,10 +148,10 @@ func detectCapabilityMismatch(total int, used, unused []string) capabilityMismat
 	usedRead, usedWrite := capabilityMethodCounts(used)
 	unusedRead, unusedWrite := capabilityMethodCounts(unused)
 	if usedRead > 0 && usedWrite == 0 && unusedWrite > 0 && (len(used) <= 1 || total >= 6 && unusedWrite <= 2) {
-		return capabilityMismatch{detected: true, direction: "read-only", opposite: "mutation"}
+		return capabilityMismatch{detected: true, direction: "lookup", opposite: "mutation"}
 	}
 	if usedWrite > 0 && usedRead == 0 && unusedRead >= 3 && len(used) <= 2 {
-		return capabilityMismatch{detected: true, direction: "write-only", opposite: "query"}
+		return capabilityMismatch{detected: true, direction: "mutation", opposite: "query"}
 	}
 	return capabilityMismatch{}
 }
@@ -176,7 +182,7 @@ func methodCapability(name string) capability {
 	if hasMethodPrefix(name, "Get", "List", "Find", "Lookup", "Load", "Read", "Count", "Is", "Has") {
 		return methodCapabilityRead
 	}
-	if hasMethodPrefix(name, "Add", "Apply", "Archive", "Cancel", "Claim", "Create", "Delete", "Dismiss", "Enqueue", "Finish", "Mark", "Publish", "Recover", "Remember", "Remove", "Renew", "Requeue", "Request", "Save", "Set", "Start", "Store", "Update", "Write") {
+	if hasMethodPrefix(name, "Add", "Apply", "Archive", "Cancel", "Claim", "Create", "Delete", "Dismiss", "Enqueue", "Finish", "Mark", "Publish", "Recover", "Remember", "Remove", "Renew", "Requeue", "Request", "Save", "Set", "Start", "Store", "Update", "Write", "Touch", "Ensure") {
 		return methodCapabilityWrite
 	}
 	return methodCapabilityOther
@@ -370,7 +376,10 @@ func checkISPUnusedDependencies(
 			}
 			for _, spec := range gen.Specs {
 				typeSpec, ok := spec.(*ast.TypeSpec)
-				if !ok || !typeSpec.Name.IsExported() || isWiringAggregateName(typeSpec.Name.Name, cfg) {
+				if !ok || !typeSpec.Name.IsExported() {
+					continue
+				}
+				if !hasReceiverOwnedState(files, typeSpec.Name.Name) && !carrierFieldsLocallyReferenced(typeSpec, files, info) {
 					continue
 				}
 				structType, ok := typeSpec.Type.(*ast.StructType)
@@ -486,6 +495,9 @@ func (flows *dependencyFieldFlows) recordParent(node ast.Node, stack []ast.Node)
 
 func (flows *dependencyFieldFlows) consumed(field *types.Var) bool {
 	flows.index()
+	if flows.carrierFieldEscapes(field) {
+		return true
+	}
 	if value, ok := flows.memo[field]; ok {
 		return value
 	}
@@ -571,4 +583,94 @@ func dereferencedStructType(t types.Type) (*types.Struct, bool) {
 	}
 	structType, ok := t.Underlying().(*types.Struct)
 	return structType, ok
+}
+
+func hasReceiverOwnedState(files []*ast.File, owner string) bool {
+	for _, file := range files {
+		for _, declaration := range file.Decls {
+			fn, ok := declaration.(*ast.FuncDecl)
+			if ok && isReceiverMethodOf(fn, owner) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func carrierFieldsLocallyReferenced(ts *ast.TypeSpec, files []*ast.File, info *types.Info) bool {
+	object, ok := info.Defs[ts.Name].(*types.TypeName)
+	if !ok {
+		return false
+	}
+	structure, ok := object.Type().Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+	fields := map[types.Object]bool{}
+	for i := 0; i < structure.NumFields(); i++ {
+		fields[structure.Field(i)] = true
+	}
+	found := false
+	for _, file := range files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if ok && fields[selectionObject(info, sel)] {
+				found = true
+			}
+			return true
+		})
+	}
+	return found
+}
+func (flows *dependencyFieldFlows) carrierFieldEscapes(field *types.Var) bool {
+	for _, file := range flows.files {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, raw := range gen.Specs {
+				ts, ok := raw.(*ast.TypeSpec)
+				if !ok || hasReceiverOwnedState(flows.files, ts.Name.Name) {
+					continue
+				}
+				obj, ok := flows.info.Defs[ts.Name].(*types.TypeName)
+				if !ok {
+					continue
+				}
+				structure, ok := obj.Type().Underlying().(*types.Struct)
+				if !ok {
+					continue
+				}
+				owns := false
+				for i := 0; i < structure.NumFields(); i++ {
+					owns = owns || structure.Field(i) == field
+				}
+				if !owns {
+					continue
+				}
+				escapes := false
+				for _, source := range flows.files {
+					ast.Inspect(source, func(n ast.Node) bool {
+						ret, ok := n.(*ast.ReturnStmt)
+						if !ok {
+							return true
+						}
+						for _, expr := range ret.Results {
+							typ := flows.info.TypeOf(expr)
+							if pointer, ok := typ.(*types.Pointer); ok {
+								typ = pointer.Elem()
+							}
+							if typ != nil && types.Identical(typ, obj.Type()) {
+								escapes = true
+							}
+						}
+						return true
+					})
+				}
+				return escapes
+			}
+		}
+	}
+	return false
 }

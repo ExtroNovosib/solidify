@@ -34,6 +34,7 @@ type yamlSRPSection struct {
 
 type yamlISPSection struct {
 	WiringAggregateSuffixes []string `yaml:"wiring_aggregate_suffixes"`
+	ExecutionMethods        []string `yaml:"execution_methods"`
 }
 
 type yamlOCPSection struct {
@@ -164,6 +165,7 @@ func (raw yamlFileConfig) toFileConfig() FileConfig {
 
 		SRPOrchestratorSuffixes:    append([]string(nil), raw.SRP.OrchestratorSuffixes...),
 		ISPWiringAggregateSuffixes: append([]string(nil), raw.ISP.WiringAggregateSuffixes...),
+		ISPExecutionMethods:        append([]string(nil), raw.ISP.ExecutionMethods...),
 		DIPDomainPackages:          append([]string(nil), raw.DIP.DomainPackages...),
 		DIPDataBagSuffixes:         append([]string(nil), raw.DIP.DataBagSuffixes...),
 		DIPDetailImports:           append([]string(nil), raw.DIP.DetailImports...),

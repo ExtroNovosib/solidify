@@ -11,6 +11,7 @@ import (
 
 func TestCheckRegistryCompleteness(t *testing.T) {
 	expected := []CheckID{
+		CheckLSPDiscardedRead, CheckLSPNoopDeadline, CheckISPConstructorRole, CheckSRPTransportWorkflow,
 		CheckSRPGodType, CheckSRPLowCohesionType, CheckSRPLargeType,
 		CheckSRPHighFanOutType, CheckSRPComplexFunction, CheckSRPMixedInputSurface,
 		CheckSRPDataClump, CheckSRPFlagArgument, CheckSRPMixedImportClusters,
@@ -75,6 +76,7 @@ func TestCheckRegistryProfilesModesAndSurfaces(t *testing.T) {
 		CheckISPStubImplementation: true, CheckDIPConcreteDependency: true,
 	}
 	plugin := map[CheckID]bool{
+		CheckLSPDiscardedRead: true, CheckLSPNoopDeadline: true, CheckISPConstructorRole: true, CheckSRPTransportWorkflow: true,
 		CheckSRPGodType: true, CheckSRPLowCohesionType: true, CheckSRPLargeType: true,
 		CheckSRPHighFanOutType: true, CheckSRPComplexFunction: true,
 		CheckSRPMixedInputSurface: true, CheckSRPDataClump: true,
@@ -108,11 +110,11 @@ func TestCheckRegistryProfilesModesAndSurfaces(t *testing.T) {
 	if stableCount != 7 {
 		t.Fatalf("stable checks = %d, want 7", stableCount)
 	}
-	if pluginCount != 16 {
-		t.Fatalf("plugin checks = %d, want 16", pluginCount)
+	if pluginCount != 20 {
+		t.Fatalf("plugin checks = %d, want 20", pluginCount)
 	}
-	if modeCounts[SyntaxEquivalent] != 4 || modeCounts[SyntaxConservative] != 9 || modeCounts[SyntaxUnavailable] != 16 {
-		t.Fatalf("syntax capability counts = %v, want equivalent=4 conservative=9 unavailable=16", modeCounts)
+	if modeCounts[SyntaxEquivalent] != 4 || modeCounts[SyntaxConservative] != 9 || modeCounts[SyntaxUnavailable] != 20 {
+		t.Fatalf("syntax capability counts = %v, want equivalent=4 conservative=9 unavailable=20", modeCounts)
 	}
 }
 

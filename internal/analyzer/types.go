@@ -58,6 +58,11 @@ const (
 	CheckOCPImplementationCoupling  CheckID = "SOLID-O/implementation-coupling"
 	CheckOCPParallelImplementations CheckID = "SOLID-O/parallel-implementations"
 
+	CheckLSPDiscardedRead     CheckID = "SOLID-L/discarded-read"
+	CheckLSPNoopDeadline      CheckID = "SOLID-L/noop-deadline"
+	CheckISPConstructorRole   CheckID = "SOLID-I/constructor-role"
+	CheckSRPTransportWorkflow CheckID = "SOLID-S/transport-workflow"
+
 	CheckLSPNonExactEOF          CheckID = "SOLID-L/non-exact-eof"
 	CheckLSPNilEmbeddedInterface CheckID = "SOLID-L/nil-embedded-interface"
 
@@ -337,6 +342,7 @@ type Config struct {
 	// ISPWiringAggregateSuffixes lists type-name suffixes (for example Deps)
 	// of dependency bundles exempt from unused-dependency findings.
 	ISPWiringAggregateSuffixes []string
+	ISPExecutionMethods        []string
 
 	// DIPAllowDependencies lists concrete type names intentionally permitted
 	// at composition boundaries (for example a database driver).

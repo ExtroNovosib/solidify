@@ -22,7 +22,7 @@ normally a boundary object rather than a consumer-owned capability set.
 
 The numeric fallback requires an interface with at least four methods and a
 used-method percentage below `isp_usage_ratio_percent`. It also recognizes
-high-confidence read-only/write-only capability leaks, such as a trace reader
+high-confidence lookup/mutation capability leaks, such as a trace reader
 receiving stage-mutation operations. Unknown interface escapes remain clean
 rather than being guessed at.
 
@@ -59,7 +59,7 @@ known 66-percent small-interface false-positive boundary. Architecture
 `logic_packages` and `composition_roots`, disabled checks, suppressions, and
 baseline v5 filtering all remain authoritative.
 
-The check assigns a warning to strong low-ratio, read/write, or queue-worker
+The check assigns a warning to strong low-ratio, lookup/mutation, or queue-worker
 role splits. It emits a note for lower-impact high-precision ratio findings.
 
 ## Limitations and remediation
@@ -70,3 +70,5 @@ objects. For a real finding, define the smallest consumer-owned role beside the
 consumer and let the existing adapter satisfy it structurally. If the broader
 contract is intentional, document a specific suppression or use baseline v5
 with a review reason.
+
+`isp.execution_methods` is an optional exact-name list, empty by default. A consumer using settings/listing methods while leaving a configured execution capability unused can receive a capability finding independently of the numeric ratio. Tunnel's reviewed calibration uses `[TryClaimRuleUse]`. This is policy evidence, not an assumption that `TouchLastUsed` or `EnsureSettings` is read-only; diagnostics show the actual used and unused method sets. Changing the policy changes the cache key.

@@ -682,15 +682,22 @@ func relatedDiscriminatorLocations(sites []*ocpDiscriminatorSite) []RelatedLocat
 }
 
 func discriminatorFieldKey(expr ast.Expr, info *types.Info) (string, bool) {
-	sel, ok := expr.(*ast.SelectorExpr)
-	if !ok || info == nil {
+	if info == nil {
 		return "", false
 	}
-	selection := info.Selections[sel]
-	if selection == nil || selection.Kind() != types.FieldVal {
-		return "", false
+	if sel, ok := expr.(*ast.SelectorExpr); ok {
+		if selection := info.Selections[sel]; selection != nil && selection.Kind() == types.FieldVal {
+			return canonicalTypeKey(info.TypeOf(sel.X)) + "." + sel.Sel.Name, true
+		}
 	}
-	return canonicalTypeKey(info.TypeOf(sel.X)) + "." + sel.Sel.Name, true
+	if typ := info.TypeOf(expr); typ != nil {
+		if named, ok := types.Unalias(typ).(*types.Named); ok {
+			if basic, ok := named.Underlying().(*types.Basic); ok && basic.Info()&(types.IsInteger|types.IsString) != 0 {
+				return "enum:" + canonicalTypeKey(named), true
+			}
+		}
+	}
+	return "", false
 }
 
 func discriminatorSwitchValues(stmt *ast.SwitchStmt, info *types.Info) ([]string, bool) {
@@ -738,7 +745,7 @@ func collectDiscriminatorIfChains(pkg *packageFiles, file *ast.File, functions [
 		if ok && !discriminatorFieldAllowed(fieldKey, cfg) {
 			ok = false
 		}
-		if !ok {
+		if !ok || strings.HasPrefix(fieldKey, "enum:") && discriminatorControl(enclosingDeclaration(functions, stmt), pkg.info) {
 			return true
 		}
 		for current := stmt; current != nil; {
@@ -760,6 +767,9 @@ func collectDiscriminatorIfChains(pkg *packageFiles, file *ast.File, functions [
 }
 
 func discriminatorFieldAllowed(key string, cfg Config) bool {
+	if strings.HasPrefix(key, "enum:") {
+		return true
+	}
 	name := key
 	if index := strings.LastIndexByte(name, '.'); index >= 0 {
 		name = name[index+1:]
@@ -912,7 +922,7 @@ func functionReturnsInterface(fn *ast.FuncDecl, info *types.Info) bool {
 		return false
 	}
 	for _, field := range fn.Type.Results.List {
-		if isInterface(info.TypeOf(field.Type)) {
+		if typ := info.TypeOf(field.Type); isInterface(typ) && !types.Identical(typ, types.Universe.Lookup("error").Type()) {
 			return true
 		}
 	}

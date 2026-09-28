@@ -86,7 +86,7 @@ func emitDIPLayerImport(pkgs []*packageFiles, cfg Config) []Issue {
 			continue
 		}
 		for _, imported := range pkg.imports {
-			if !dipForbiddenLogicImport(imported, cfg) {
+			if !dipForbiddenLogicImport(imported, cfg) || (imported == "net/http" && httpImportIsDataOnly(pkg)) {
 				continue
 			}
 			locations := importRelatedLocations(pkg, []string{imported})
@@ -504,4 +504,55 @@ func dipSelectorPackagePath(sel *ast.SelectorExpr, info *types.Info) string {
 		}
 	}
 	return ""
+}
+
+// HTTP status constants and header value manipulation do not impose a transport
+// execution contract. Keep unknown, dot, and behavioral uses conservative.
+func httpImportIsDataOnly(pkg *packageFiles) bool {
+	used := false
+	for _, file := range pkg.files {
+		alias := ""
+		for _, imported := range file.Imports {
+			if imported.Path.Value != `"net/http"` {
+				continue
+			}
+			alias = "http"
+			if imported.Name != nil {
+				alias = imported.Name.Name
+			}
+		}
+		if alias == "" {
+			continue
+		}
+		if alias == "." || alias == "_" {
+			return false
+		}
+		safe := true
+		ast.Inspect(file, func(node ast.Node) bool {
+			selector, ok := node.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			id, ok := selector.X.(*ast.Ident)
+			if !ok || id.Name != alias {
+				return true
+			}
+			if pkg.info != nil {
+				name, ok := pkg.info.Uses[id].(*types.PkgName)
+				if !ok || name.Imported().Path() != "net/http" {
+					return true
+				}
+			}
+			used = true
+			name := selector.Sel.Name
+			if name != "Header" && name != "CanonicalHeaderKey" && !strings.HasPrefix(name, "Status") {
+				safe = false
+			}
+			return true
+		})
+		if !safe {
+			return false
+		}
+	}
+	return used
 }

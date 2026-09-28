@@ -42,6 +42,7 @@ type FileConfig struct {
 	// Naming conventions; an empty list keeps the built-in default.
 	SRPOrchestratorSuffixes    []string
 	ISPWiringAggregateSuffixes []string
+	ISPExecutionMethods        []string
 	DIPDomainPackages          []string
 	DIPDataBagSuffixes         []string
 	DIPDetailImports           []string
@@ -201,6 +202,7 @@ func (c FileConfig) Apply(cfg *Config) {
 	cfg.DIPTransportTypes = append([]string(nil), c.DIPTransportTypes...)
 	applyNonEmpty(&cfg.SRPOrchestratorSuffixes, c.SRPOrchestratorSuffixes)
 	applyNonEmpty(&cfg.ISPWiringAggregateSuffixes, c.ISPWiringAggregateSuffixes)
+	cfg.ISPExecutionMethods = append([]string(nil), c.ISPExecutionMethods...)
 	applyNonEmpty(&cfg.DIPDomainPackages, c.DIPDomainPackages)
 	applyNonEmpty(&cfg.DIPDataBagSuffixes, c.DIPDataBagSuffixes)
 	applyNonEmpty(&cfg.DIPDetailImports, c.DIPDetailImports)

@@ -50,3 +50,5 @@ dependency passed through an unknown helper is considered live. Remove a truly
 unused constructor/dependency-bag field and its composition assignment; do not
 delete an interface operation that has other consumers. For intentional future
 wiring, document the reason with a narrow suppression or baseline v5 entry.
+
+Receiver-owned state is analyzed per member, including nested dependency bags and known local helper flows. Passive carrier values passed to consumers or returned externally are handled conservatively when their use cannot be attributed to a receiver. Names such as `Ports` or `Stores` do not establish consumption by themselves. Unknown externally escaping bags are outside the precise receiver-owned analysis; unused siblings of a demonstrably consumed member remain reportable.

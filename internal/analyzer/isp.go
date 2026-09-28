@@ -22,8 +22,11 @@ func CheckISP(fset *token.FileSet, files []*ast.File, cfg Config) []Issue {
 func CheckISPWithTypes(fset *token.FileSet, files []*ast.File, info *types.Info, cfg Config, pkg *packageFiles) []Issue {
 	interfaces := localInterfaces(files)
 	var issues []Issue
+	if checkEnabled(cfg, CheckISPConstructorRole) {
+		issues = append(issues, checkISPConstructorRoles(fset, files, info, pkg)...)
+	}
 	if checkEnabled(cfg, CheckISPFatInterface) {
-		issues = checkISPFatInterfaces(fset, files, info, cfg, pkg, interfaces)
+		issues = append(issues, checkISPFatInterfaces(fset, files, info, cfg, pkg, interfaces)...)
 	}
 	if checkEnabled(cfg, CheckISPUsageRatio) {
 		issues = append(issues, checkISPUsageRatio(fset, files, info, cfg, pkg)...)
@@ -59,7 +62,7 @@ func checkISPFatInterfaces(
 				continue
 			}
 			for _, spec := range gen.Specs {
-				if issue := fatInterfaceIssue(fset, gen, spec, info, cfg, interfaces); issue != nil {
+				if issue := fatInterfaceIssue(fset, gen, spec, info, cfg, interfaces); issue != nil && !fullyConsumedComposedInterface(spec, files, info) {
 					issues = append(issues, *issue)
 				}
 			}
@@ -223,4 +226,105 @@ func interfaceDeclDeprecated(gen *ast.GenDecl, ts *ast.TypeSpec) bool {
 		}
 	}
 	return false
+}
+
+// A composed port has already declared its roles. A complete consumer is not
+// forced to implement unrelated methods; partial consumers remain diagnosed.
+func fullyConsumedComposedInterface(spec ast.Spec, files []*ast.File, info *types.Info) bool {
+	if info == nil {
+		return false
+	}
+	ts, ok := spec.(*ast.TypeSpec)
+	if !ok {
+		return false
+	}
+	syntax, ok := ts.Type.(*ast.InterfaceType)
+	if !ok {
+		return false
+	}
+	embedded := 0
+	for _, field := range syntax.Methods.List {
+		if len(field.Names) == 0 {
+			embedded++
+		}
+	}
+	if embedded < 2 {
+		return false
+	}
+	object, ok := info.Defs[ts.Name].(*types.TypeName)
+	if !ok {
+		return false
+	}
+	target := object.Type()
+	iface, ok := target.Underlying().(*types.Interface)
+	if !ok {
+		return false
+	}
+	iface.Complete()
+	locals := localFunctionDeclarations(files, info)
+	for _, file := range files {
+		for _, declaration := range file.Decls {
+			gen, ok := declaration.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, raw := range gen.Specs {
+				owner, ok := raw.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				structure, ok := owner.Type.(*ast.StructType)
+				if !ok {
+					continue
+				}
+				for _, field := range structure.Fields.List {
+					if !types.Identical(info.TypeOf(field.Type), target) {
+						continue
+					}
+					for _, name := range field.Names {
+						obj, ok := info.Defs[name].(*types.Var)
+						if !ok {
+							continue
+						}
+						usage := receiverFieldUsage(owner.Name.Name, obj, files, info, locals)
+						for method := range directReceiverFieldMethods(owner.Name.Name, obj, files, info) {
+							usage.methods[method] = true
+						}
+						if len(unusedInterfaceMethods(iface, usage.methods)) == 0 {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+func directReceiverFieldMethods(owner string, field *types.Var, files []*ast.File, info *types.Info) map[string]bool {
+	methods := map[string]bool{}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || !isReceiverMethodOf(fn, owner) {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				member, ok := n.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				base, ok := member.X.(*ast.SelectorExpr)
+				if !ok || selectionObject(info, base) != field {
+					return true
+				}
+				selection := info.Selections[member]
+				if selection != nil && selection.Kind() == types.MethodVal {
+					methods[member.Sel.Name] = true
+				}
+				return true
+			})
+		}
+	}
+	return methods
 }

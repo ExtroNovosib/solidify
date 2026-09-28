@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
 )
 
 const ocpKindTypeAssertion = "type assertion"
@@ -173,7 +174,7 @@ func collectOCPAnalysis(pkgs []*packageFiles, cfg Config) ocpAnalysis {
 					if current.Tag == nil || pkg.info == nil {
 						return true
 					}
-					if fieldKey, ok := discriminatorFieldKey(current.Tag, pkg.info); ok && discriminatorFieldAllowed(fieldKey, cfg) {
+					if fieldKey, ok := switchDiscriminatorKey(current, pkg.info); ok && discriminatorFieldAllowed(fieldKey, cfg) && (!strings.HasPrefix(fieldKey, "enum:") || !discriminatorControl(enclosingDeclaration(functions, current), pkg.info)) {
 						values, badDefault := discriminatorSwitchValues(current, pkg.info)
 						result.discriminators = append(result.discriminators, &ocpDiscriminatorSite{
 							pkg: pkg, node: current, pos: pkg.fset.Position(current.Pos()),
@@ -187,5 +188,6 @@ func collectOCPAnalysis(pkgs []*packageFiles, cfg Config) ocpAnalysis {
 			collectDiscriminatorIfChains(pkg, file, functions, cfg, &result)
 		}
 	}
+	result.discriminators = mergeEnumFunctionSites(result.discriminators)
 	return result
 }

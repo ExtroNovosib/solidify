@@ -33,7 +33,7 @@ func emitOCPConcreteParameters(pkgs []*packageFiles, cfg Config) []Issue {
 							continue
 						}
 						methods, safe := concreteParameterMethods(fn.Body, obj, pkg.info)
-						if !safe || len(methods) < cfg.OCPMinConcreteParameterMethods {
+						if !safe || len(methods) < cfg.OCPMinConcreteParameterMethods || domainMapperMethods(paramType, methods, cfg) {
 							continue
 						}
 						interfaceName := matchingInterface(pkg, methods)
@@ -90,7 +90,7 @@ func emitOCPFactories(pkgs []*packageFiles, cfg Config) ([]Issue, map[string]boo
 						continue
 					}
 					cases := countCaseClauses(sw.Body)
-					if cases <= cfg.MaxTypeSwitchCases {
+					if cases <= cfg.MaxTypeSwitchCases || !factoryBranchProducts(sw.Body, functionSignature(fn, pkg.info), pkg.info, localFunctionDeclarations(pkg.files, pkg.info)) {
 						continue
 					}
 					pos := pkg.fset.Position(sw.Pos())
@@ -105,7 +105,7 @@ func emitOCPFactories(pkgs []*packageFiles, cfg Config) ([]Issue, map[string]boo
 						return true
 					}
 					mapType, ok := pkg.info.TypeOf(literal.Type).Underlying().(*types.Map)
-					if !ok || len(literal.Elts) <= cfg.MaxTypeSwitchCases || !factoryMapValue(mapType) {
+					if !ok || len(literal.Elts) <= cfg.MaxTypeSwitchCases || (!factoryMapValue(mapType) || !factoryTableProducts(literal, mapType, pkg)) {
 						return true
 					}
 					pos := pkg.fset.Position(literal.Pos())
@@ -131,12 +131,12 @@ func factoryMapValue(mapType *types.Map) bool {
 			return false
 		}
 		for index := 0; index < signature.Results().Len(); index++ {
-			if isInterface(signature.Results().At(index).Type()) {
+			if factoryProductInterface(signature.Results().At(index).Type()) {
 				return true
 			}
 		}
 	}
-	return isInterface(value)
+	return factoryProductInterface(value)
 }
 
 func isFactoryName(name string) bool {
@@ -146,4 +146,125 @@ func isFactoryName(name string) bool {
 		}
 	}
 	return false
+}
+
+// Domain data mapping uses observational accessors, not injected operations.
+// The package role alone cannot exempt a behavioral collaborator.
+func domainMapperMethods(typ types.Type, methods []*types.Func, cfg Config) bool {
+	if !isDomainStructType(typ, cfg) || len(methods) == 0 {
+		return false
+	}
+	for _, method := range methods {
+		sig, ok := method.Type().(*types.Signature)
+		if !ok || sig.Params().Len() != 0 || sig.Results().Len() == 0 || domainMutationName(method.Name()) {
+			return false
+		}
+		for i := 0; i < sig.Results().Len(); i++ {
+			if types.Identical(sig.Results().At(i).Type(), types.Universe.Lookup("error").Type()) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func factoryProductInterface(typ types.Type) bool {
+	return isInterface(typ) && !types.Identical(typ, types.Universe.Lookup("error").Type())
+}
+func functionSignature(fn *ast.FuncDecl, info *types.Info) *types.Signature {
+	object, ok := info.Defs[fn.Name].(*types.Func)
+	if !ok {
+		return nil
+	}
+	sig, _ := object.Type().(*types.Signature)
+	return sig
+}
+func factoryBranchProducts(body ast.Node, sig *types.Signature, info *types.Info, locals map[*types.Func]*ast.FuncDecl) bool {
+	if sig == nil {
+		return false
+	}
+	for i := 0; i < sig.Results().Len(); i++ {
+		abstraction := sig.Results().At(i).Type()
+		if !factoryProductInterface(abstraction) {
+			continue
+		}
+		products := map[string]bool{}
+		collectFactoryReturns(body, i, abstraction, info, locals, products, map[*ast.FuncDecl]bool{})
+		if len(products) > 1 {
+			return true
+		}
+	}
+	return false
+}
+func collectFactoryReturns(body ast.Node, index int, abstraction types.Type, info *types.Info, locals map[*types.Func]*ast.FuncDecl, products map[string]bool, visiting map[*ast.FuncDecl]bool) {
+	if body == nil {
+		return
+	}
+	ast.Inspect(body, func(node ast.Node) bool {
+		if _, closure := node.(*ast.FuncLit); closure {
+			return false
+		}
+		ret, ok := node.(*ast.ReturnStmt)
+		if !ok || index >= len(ret.Results) {
+			return true
+		}
+		collectFactoryProduct(ret.Results[index], index, abstraction, info, locals, products, visiting)
+		return true
+	})
+}
+func collectFactoryProduct(expr ast.Expr, index int, abstraction types.Type, info *types.Info, locals map[*types.Func]*ast.FuncDecl, products map[string]bool, visiting map[*ast.FuncDecl]bool) {
+	typ := info.TypeOf(expr)
+	if typ != nil && !isInterface(typ) && concreteTypeCandidate(typ) && types.AssignableTo(typ, abstraction) {
+		products[canonicalTypeKey(typ)] = true
+		return
+	}
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return
+	}
+	helper := locals[calledFunction(call.Fun, info)]
+	if helper == nil || helper.Body == nil || visiting[helper] {
+		return
+	}
+	visiting[helper] = true
+	defer delete(visiting, helper)
+	collectFactoryReturns(helper.Body, index, abstraction, info, locals, products, visiting)
+}
+func factoryTableProducts(literal *ast.CompositeLit, mapType *types.Map, pkg *packageFiles) bool {
+	locals := localFunctionDeclarations(pkg.files, pkg.info)
+	value := mapType.Elem()
+	if sig, ok := value.(*types.Signature); ok {
+		for i := 0; i < sig.Results().Len(); i++ {
+			abstraction := sig.Results().At(i).Type()
+			if !factoryProductInterface(abstraction) {
+				continue
+			}
+			products := map[string]bool{}
+			for _, entry := range literal.Elts {
+				pair, ok := entry.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				if closure, ok := pair.Value.(*ast.FuncLit); ok {
+					collectFactoryReturns(closure.Body, i, abstraction, pkg.info, locals, products, map[*ast.FuncDecl]bool{})
+					continue
+				}
+				if helper := locals[calledFunction(pair.Value, pkg.info)]; helper != nil && helper.Body != nil {
+					collectFactoryReturns(helper.Body, i, abstraction, pkg.info, locals, products, map[*ast.FuncDecl]bool{})
+				}
+			}
+			if len(products) > 1 {
+				return true
+			}
+		}
+		return false
+	}
+	products := map[string]bool{}
+	for _, entry := range literal.Elts {
+		pair, ok := entry.(*ast.KeyValueExpr)
+		if ok {
+			collectFactoryProduct(pair.Value, 0, value, pkg.info, locals, products, map[*ast.FuncDecl]bool{})
+		}
+	}
+	return len(products) > 1
 }

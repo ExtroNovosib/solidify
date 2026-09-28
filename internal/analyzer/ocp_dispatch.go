@@ -35,14 +35,13 @@ func emitOCPDispatch(analysis ocpAnalysis, cfg Config) []Issue {
 			// code and small visitors out of the default findings.
 			allVariants := unionVariants(component)
 			largeFamily := large || len(shared) > cfg.MaxTypeSwitchCases || (len(component) >= cfg.OCPMinDispatchSites && len(allVariants) > cfg.MaxTypeSwitchCases)
-			hasStandaloneAssertion := false
+			concreteAssertion := false
 			for _, site := range component {
-				if site.kind == ocpKindTypeAssertion {
-					hasStandaloneAssertion = true
-					break
+				if site.kind == ocpKindTypeAssertion && concreteAssertionTarget(site) {
+					concreteAssertion = true
 				}
 			}
-			needsSharedVariants := len(component) > 1 && len(shared) < cfg.OCPMinSharedVariants && !hasStandaloneAssertion
+			needsSharedVariants := len(component) > 1 && len(shared) < cfg.OCPMinSharedVariants && !concreteAssertion
 			if len(component) == 0 || !largeFamily || (len(component) > 1 && (len(component) < cfg.OCPMinDispatchSites || needsSharedVariants)) {
 				continue
 			}

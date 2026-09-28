@@ -13,6 +13,10 @@ type checkExample struct {
 // TestChecksExplainExamplesAreCheckSpecific enforces completeness and that
 // no two checks share an example.
 var checkExamples = map[analyzer.CheckID]checkExample{
+	analyzer.CheckLSPDiscardedRead:     {before: "Read consumes a frame, copies a prefix and returns io.ErrShortBuffer without retaining the suffix.", after: "Cache the unread suffix and drain it before consuming another frame.", exception: "An explicit record API that is not exposed as a standard byte stream."},
+	analyzer.CheckLSPNoopDeadline:      {before: "A net.Conn SetReadDeadline ignores time.Time and returns nil.", after: "Delegate to a deadline-capable connection or apply an equivalent deadline.", exception: "An unrelated setter on a type that does not implement net.Conn."},
+	analyzer.CheckISPConstructorRole:   {before: "NewRunner accepts WideStore but stores a narrow executionStore.", after: "Accept the stored consumer interface, including variadic elements.", exception: "The constructor actually consumes extra broad-interface methods or the value escapes."},
+	analyzer.CheckSRPTransportWorkflow: {before: "An HTTP handler constructs domain aggregates then creates and saves them directly.", after: "Inject an application command that owns the ordered workflow.", exception: "Decode, invoke an injected command, and encode its result; single reads alone."},
 	analyzer.CheckSRPGodType: {
 		before:    "type OrderManager struct { db *sql.DB; mail *smtp.Client; cache *redis.Client }; func (m *OrderManager) Checkout() {}; func (m *OrderManager) EmailReceipt() {}; func (m *OrderManager) SalesReport() {}",
 		after:     "type Checkout struct { orders OrderStore }; type Receipts struct { mailer Mailer }; type SalesReport struct { cache ReportCache }",

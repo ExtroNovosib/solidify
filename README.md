@@ -6,7 +6,7 @@
 solidlint requires Go 1.25. The default `stable` profile runs exactly seven
 corpus-backed checks: `SOLID-S/large-type`, `SOLID-S/data-clump`,
 `SOLID-O/type-dispatch`, the three stable `SOLID-I/*` checks, and
-`SOLID-D/concrete-dependency`. Use `-profile=all` for all 29 checks or
+`SOLID-D/concrete-dependency`. Use `-profile=all` for all 33 checks or
 `-enable-checks=SOLID-S/complex-function,...` for granular experimental opt-in.
 Use `-profile=calibration` for the dedicated high-precision ISP lane
 (`SOLID-I/consumer-role` and `SOLID-I/unused-dependency`); see
@@ -32,7 +32,7 @@ module-wide OCP correlation; all checks remain explicitly heuristic.
 and CI automation so upgrades remain deliberate:
 
 ```sh
-go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.4.0
+go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.5.0
 solidlint -version
 solidlint -fail=false ./...
 ```
@@ -49,7 +49,7 @@ For GitHub Actions, keep installation and enforcement explicit:
 - uses: actions/setup-go@v7
   with:
     go-version: "1.25.x"
-- run: go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.4.0
+- run: go install github.com/ExtroNovosib/solidify/cmd/solidlint@v0.5.0
 - run: solidlint ./...
 ```
 
@@ -156,7 +156,7 @@ Local development has explicit short, full, and release tiers:
 ```sh
 make check-fast
 make check
-SOLIDLINT_VERSION=v0.4.0 make check-release
+SOLIDLINT_VERSION=v0.5.0 make check-release
 ```
 
 `make check-fast` runs formatting, `go vet`, unit tests, integration tests, and
@@ -171,7 +171,7 @@ To prepare and publish a release end to end, run the guarded publisher with the
 next immutable semantic version:
 
 ```sh
-make publish VERSION=v0.4.0
+make publish VERSION=v0.5.0
 ```
 
 The script verifies the branch and remote history, updates README release pins,
@@ -182,7 +182,7 @@ local gate and a GoReleaser snapshot, stages and commits all current changes,
 pushes `main`, validates that exact public commit from a clean external consumer,
 then creates and pushes the annotated tag. The tag starts the GitHub Release
 workflow. Preview every operation without modifying anything with
-`make publish VERSION=v0.4.0 PUBLISH_FLAGS=--dry-run`. Use
+`make publish VERSION=v0.5.0 PUBLISH_FLAGS=--dry-run`. Use
 `PUBLISH_FLAGS="--yes --skip-checks"` only when automating a release whose local
 and external-consumer qualification already passed for the exact content.
 When GoReleaser is not installed globally and `GORELEASER` is not set, the
@@ -456,7 +456,7 @@ destination: ./.bin
 plugins:
   - module: github.com/ExtroNovosib/solidify
     import: github.com/ExtroNovosib/solidify/plugin/solidlint
-    version: v0.4.0
+    version: v0.5.0
 ```
 
 Enable the module plugin in `.golangci.yml`:
@@ -546,3 +546,5 @@ parameter checks require a complete package type graph.
 
 Baseline v5 is the canonical write format, while v4 remains readable for an
 explicit annotated migration. Legacy YAML and rule-ID aliases remain rejected.
+
+The [Tunnel server calibration](docs/calibration/tunnel-server.md) provides an exhaustive reviewed-site manifest, positive/corrected controls and a read-only live comparison. Its four new contract checks are experimental; the default stable profile remains seven checks.

@@ -41,3 +41,5 @@ Evidence uses `large-type:type=<name>;methods=<n>;exported_methods=<n>;fields=<n
 ## Limitations and remediation
 
 Generated models, DTOs, serialization records, and framework-owned structures may be intentionally broad. Confirm that the reported methods and fields change for different reasons before extracting cohesive services or value types. Solidlint does not advertise a generic suppression as a safe repair. Use a justified source suppression for a local exception, or baseline v5 with a review reason, owner, and optional expiry for tracked debt. See the [stable v0.2 evaluation](../../evaluations/stable-v0.2.md).
+
+Pure delegated facades, including simple unavailable/nil collaborator guards, do not earn this type-size finding solely from their forwarding surface. Policy branches and mutations retain normal analysis.

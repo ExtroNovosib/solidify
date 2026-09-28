@@ -85,14 +85,9 @@ func fieldConcreteIssues(fset *token.FileSet, files []*ast.File, info *types.Inf
 					continue
 				}
 				env := dipFieldEnv{fset: fset, files: files, typeName: ts.Name.Name, info: info, kind: kind, cfg: cfg}
-				rootThreshold := env.cfg.DIPCompositionRootFields
-				if rootThreshold <= 0 {
-					rootThreshold = DefaultConfig().DIPCompositionRootFields
-				}
-				compositionRoot := countConcreteStructFieldDeps(env, st) >= rootThreshold
 				forwardedFields := dipForwardedConcreteFields(env, files, ts.Name.Name, st)
 				for _, field := range st.Fields.List {
-					if compositionRoot || dipBridgeFieldForwarded(field, forwardedFields) {
+					if dipBridgeFieldForwarded(field, forwardedFields) {
 						continue
 					}
 					if issue, ok := structFieldConcreteIssue(env, field); ok {
@@ -126,7 +121,7 @@ func structFieldConcreteIssue(env dipFieldEnv, field *ast.Field) (Issue, bool) {
 	if len(field.Names) > 0 {
 		fieldName = field.Names[0].Name
 	}
-	if passiveTestDataField(env, field) {
+	if passiveTestDataField(env, field) || returnedConcreteDataField(env) {
 		return Issue{}, false
 	}
 	if concreteFieldIsExposed(env.files, env.info, env.typeName, fieldName, dep) {
@@ -299,27 +294,35 @@ func dipForwardedConcreteFields(env dipFieldEnv, files []*ast.File, typeName str
 		return nil
 	}
 	forwarded := map[string]bool{}
+	rejected := map[string]bool{}
 	for _, file := range files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv == nil || fn.Body == nil {
+			if !ok || !isReceiverMethodOf(fn, typeName) || fn.Body == nil {
 				continue
 			}
-			if receiverTypeName(fn.Recv.List[0].Type) != typeName {
-				continue
-			}
-			ast.Inspect(fn.Body, func(node ast.Node) bool {
-				sel, ok := node.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				if concreteFields[sel.Sel.Name] {
-					forwarded[sel.Sel.Name] = true
+			referenced := map[string]bool{}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if ok && concreteFields[sel.Sel.Name] && containsString(receiverNames(fn), selectorReceiverName(sel.X)) {
+					referenced[sel.Sel.Name] = true
 				}
 				return true
 			})
+			delegated := pureForwardingField(fn, env.info)
+			for field := range referenced {
+				if field == delegated {
+					forwarded[field] = true
+				} else {
+					rejected[field] = true
+				}
+			}
 		}
 	}
+	for field := range rejected {
+		delete(forwarded, field)
+	}
+
 	if len(forwarded) == 0 {
 		return nil
 	}
@@ -591,4 +594,91 @@ func typeExprIdent(expr ast.Expr) string {
 		return typeExprIdent(t.X)
 	}
 	return ""
+}
+
+// pureForwardingField accepts only an unchanged argument delegation. Accessing
+// a field from an algorithm, policy branch or state mutation is not forwarding.
+func pureForwardingField(fn *ast.FuncDecl, info *types.Info) string {
+	if fn == nil || fn.Body == nil || len(fn.Body.List) != 1 {
+		return ""
+	}
+	var call *ast.CallExpr
+	switch statement := fn.Body.List[0].(type) {
+	case *ast.ReturnStmt:
+		if len(statement.Results) == 1 {
+			call, _ = statement.Results[0].(*ast.CallExpr)
+		}
+	case *ast.ExprStmt:
+		call, _ = statement.X.(*ast.CallExpr)
+	}
+	if call == nil {
+		return ""
+	}
+	member, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return ""
+	}
+	field, ok := member.X.(*ast.SelectorExpr)
+	if !ok || !containsString(receiverNames(fn), selectorReceiverName(field.X)) {
+		return ""
+	}
+	var parameters []*ast.Ident
+	if fn.Type.Params != nil {
+		for _, parameter := range fn.Type.Params.List {
+			parameters = append(parameters, parameter.Names...)
+		}
+	}
+	if len(call.Args) != len(parameters) {
+		return ""
+	}
+	for i, argument := range call.Args {
+		id, ok := argument.(*ast.Ident)
+		if !ok || id.Name != parameters[i].Name {
+			return ""
+		}
+		if info != nil && info.Uses[id] != info.Defs[parameters[i]] {
+			return ""
+		}
+	}
+	return field.Sel.Name
+}
+
+// returnedDomainDataField recognizes concrete aggregate values carried in
+// results. A receiver that owns behavior cannot earn this exemption by naming.
+func returnedConcreteDataField(env dipFieldEnv) bool {
+	if env.info == nil {
+		return false
+	}
+	for _, file := range env.files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			if isReceiverMethodOf(fn, env.typeName) {
+				return false
+			}
+		}
+	}
+	for _, file := range env.files {
+		found := false
+		ast.Inspect(file, func(n ast.Node) bool {
+			signature, ok := n.(*ast.FuncType)
+			if !ok || signature.Results == nil {
+				return true
+			}
+			for _, result := range signature.Results.List {
+				named, ok := namedConcreteStructType(env.info.TypeOf(result.Type))
+				if ok && named.Obj().Name() == env.typeName {
+					found = true
+				}
+			}
+			return true
+		})
+		if found {
+			return true
+		}
+	}
+
+	return false
 }

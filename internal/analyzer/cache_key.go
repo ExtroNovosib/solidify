@@ -35,6 +35,7 @@ type cacheKeyMaterial struct {
 	OCPImplementationPackages  []string
 	OCPCompositionRoots        []string
 	ISPWiringAggregateSuffixes []string
+	ISPExecutionMethods        []string
 	DIPAllowDependencies       []string
 	DIPInfraErrorPackages      []string
 	DIPTransportTypes          []string
@@ -71,6 +72,7 @@ func newCacheKeyMaterial(cfg Config, plan ExecutionPlan, build string) cacheKeyM
 		OCPImplementationPackages:  cfg.OCPImplementationPackages,
 		OCPCompositionRoots:        cfg.OCPCompositionRoots,
 		ISPWiringAggregateSuffixes: cfg.ISPWiringAggregateSuffixes,
+		ISPExecutionMethods:        cfg.ISPExecutionMethods,
 		DIPAllowDependencies:       cfg.DIPAllowDependencies,
 		DIPInfraErrorPackages:      cfg.DIPInfraErrorPackages,
 		DIPTransportTypes:          cfg.DIPTransportTypes,

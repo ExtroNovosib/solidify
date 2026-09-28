@@ -104,7 +104,7 @@ smoke: build
 	$(BUILD) testdata/clean
 
 precision:
-	$(GO) test ./internal/analyzer -run '^(TestPrecisionCorpus|TestStableEvaluationManifestCoverageAndVerdicts|TestStableEvaluationEdgeStyles)$$' -count=1
+	$(GO) test ./internal/analyzer -run '^(TestPrecisionCorpus|TestStableEvaluationManifestCoverageAndVerdicts|TestStableEvaluationEdgeStyles|TestTunnel.*)$$' -count=1
 
 cli-e2e: build
 	$(BUILD) -profile=stable -format=json -fail=false ./testdata/violations > $(BUILD_DIR)/stable.json

@@ -36,3 +36,5 @@ Evidence records the constructor or field and fully qualified concrete dependenc
 ## Limitations and remediation
 
 Concrete dependencies are appropriate in composition roots, adapters, and stable vendor contracts. Introduce a consumer-owned behavioral interface only when substitution or test seams are real requirements. There is no universal safe rewrite. Use a justified suppression or annotated baseline v5 entry for reviewed exceptions. See the [stable v0.2 evaluation](../../evaluations/stable-v0.2.md).
+
+The number of injected concrete fields does not prove composition ownership. Only configured composition roots are exempt on that basis. A field used solely for direct, unchanged argument forwarding is an adapter seam; branching, authorization, state changes, or any other substantive use of that field keeps it eligible. Passive result/projection carriers returned by functions or interface methods remain data when the carrier owns no receiver behavior; an injected behavioral service still qualifies.

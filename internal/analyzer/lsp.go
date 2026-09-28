@@ -18,7 +18,7 @@ func CheckLSPWithTypes(fset *token.FileSet, files []*ast.File, info *types.Info,
 	if info == nil {
 		return nil
 	}
-	var issues []Issue
+	issues := checkLSPStreamContracts(fset, files, info, pkg)
 	for _, f := range files {
 		if skipGenerated(pkg, f) {
 			continue

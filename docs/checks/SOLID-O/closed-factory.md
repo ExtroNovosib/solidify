@@ -23,3 +23,7 @@ The analyzer corpus contains the executable positive, boundary, and clean exampl
 ## Limitations and remediation
 
 This is an explainable heuristic, not proof of a design defect. Review generated code, DTOs, composition roots, adapters, thin wrappers, and framework contracts before refactoring. Prefer a behavior-preserving extraction or narrower consumer-owned abstraction. Solidlint does not advertise generic suppression insertion as an automatic or safe source fix. For intentional debt, add a reason-bearing `//solidify:ignore SOLID-O/closed-factory ...` manually or use an annotated baseline v5 entry with review context. Configure canonical snake_case thresholds where the check exposes them, and use exact IDs in `disabled_checks`, severity overrides, suppressions, and baselines.
+
+A factory's built-in `error` result is not an abstract product. Validators returning `(*Aggregate, error)` remain clean on that basis; factories selecting concrete products for a non-error interface remain eligible.
+
+Switch branches and static constructor tables must prove at least two distinct concrete products assignable to the same non-error abstraction. Repeated validation branches returning the same product and error-only constructor tables stay quiet. Known local constructor helpers are followed; opaque product flow is withheld conservatively.

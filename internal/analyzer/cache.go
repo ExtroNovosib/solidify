@@ -18,7 +18,7 @@ import (
 
 // Bump the version when cache-key semantics change so entries produced by an
 // older solidlint cannot be reused with the new analyzer.
-const cacheVersion = "solidlint-cache-v11"
+const cacheVersion = "solidlint-cache-v12"
 
 type packageCache struct {
 	root        string

@@ -90,7 +90,7 @@ func schemaProperties(checkIDs []string, thresholds map[string]any) map[string]a
 		"fail_level":         map[string]any{"enum": severityValues},
 		"srp":                nestedStringArrays("orchestrator_suffixes"),
 		"ocp":                nestedStringArrays("discriminator_fields", "allow_dispatch_types", "allow_packages"),
-		"isp":                nestedStringArrays("wiring_aggregate_suffixes"),
+		"isp":                nestedStringArrays("wiring_aggregate_suffixes", "execution_methods"),
 		"architecture":       nestedStringArrays("logic_packages", "implementation_packages", "composition_roots"),
 		"dip":                nestedStringArrays("infra_error_packages", "transport_types", "domain_packages", "data_bag_suffixes", "detail_imports"),
 	}

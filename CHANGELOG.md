@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.5.0
+
+- Add experimental typed checks `SOLID-L/discarded-read`, `SOLID-L/noop-deadline`, `SOLID-I/constructor-role`, and `SOLID-S/transport-workflow`; stable remains seven checks, JSON v3 and fingerprint v4 remain unchanged.
+- Calibrate concrete dependencies, aggregate mapping, composed interfaces, carrier field flows, delegated facades, typed enum clusters and optional capability assertions using exhaustive Tunnel report controls. Data-only HTTP status/header imports remain quiet; behavioral transport imports stay eligible.
+- Add optional exact-name `isp.execution_methods` policy, default empty, with configuration schema and cache-key coverage. Add portable per-site fixtures, executable reader/deadline contract probes and a read-only live before/after verifier.
+
 ## v0.4.0
 
 - Fix `fail_level` in the configuration file being ignored for the exit code; `-fail-level` still takes precedence.
